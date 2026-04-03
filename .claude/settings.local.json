@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx genlayer:*)",
+      "Bash(curl -s -X POST https://rpc-bradbury.genlayer.com -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getBalance\",\"params\":[\"0x22608C1eC27C592c7958cd175E467bD83a21C172\",\"latest\"]}')",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(int\\(d['result'],16\\)/1e18, 'GEN'\\)\")"
+    ]
+  }
+}
