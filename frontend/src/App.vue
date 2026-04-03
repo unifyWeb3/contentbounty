@@ -22,7 +22,7 @@
         <div class="wallet-area">
           <template v-if="connected">
             <span class="wallet-pill" :title="walletAddress">{{ shortAddr(walletAddress) }}</span>
-            <span class="bal-pill" title="GenLayer Studio — simulated GEN (unlimited for testing)">∞ GEN</span>
+            <span class="bal-pill" title="GenLayer Studio _ simulated GEN (unlimited for testing)">∞ GEN</span>
             <button class="btn-icon" @click="refreshBalance" title="Refresh">↻</button>
             <button class="btn-disconnect" @click="disconnect">×</button>
           </template>
@@ -40,7 +40,7 @@
           <div class="modal-head">
             <div>
               <h2 class="modal-title">Connect to ContentBounty</h2>
-              <p class="modal-sub">GenLayer uses its own wallet — funded once from the faucet</p>
+              <p class="modal-sub">GenLayer uses its own wallet _ funded once from the faucet</p>
             </div>
             <button class="btn-close" @click="showWalletModal = false">✕</button>
           </div>
@@ -83,19 +83,19 @@
               </a>
             </div>
             <div class="created-export">
-              <p class="export-warn">Save your private key — you'll need it to restore your wallet on another device:</p>
+              <p class="export-warn">Save your private key _ you'll need it to restore your wallet on another device:</p>
               <div class="key-box">{{ exportKey }}</div>
               <button class="btn-copy" @click="copyKey">{{ copied ? '✓ Copied' : 'Copy key' }}</button>
             </div>
             <button class="btn-primary w-full mt-16" @click="showWalletModal = false; walletView = null">
-              Done — let's go
+              Done _ let's go
             </button>
           </div>
         </div>
       </div>
     </Transition>
 
-    <!-- ── FAUCET BANNER — hidden on studionet (balance always 0 there) -->
+    <!-- ── FAUCET BANNER _ hidden on studionet (balance always 0 there) -->
     <div v-if="false && connected && needsFaucet" class="faucet-banner">
       <span>⚡ Balance low - fund your wallet to post bounties</span>
       <a href="https://testnet-faucet.genlayer.foundation/" target="_blank" class="faucet-link">Claim 100 GEN →</a>
@@ -109,7 +109,7 @@
         <div class="section-head">
           <div>
             <h1 class="section-title">Open Bounties</h1>
-            <p class="section-sub">Submit your content. If the AI approves — you get paid instantly.</p>
+            <p class="section-sub">Submit your content. If the AI approves _ you get paid instantly.</p>
           </div>
           <button class="btn-ghost" @click="loadBounties" :disabled="loading">
             {{ loading ? 'Loading…' : 'Refresh' }}
@@ -257,7 +257,8 @@
             </button>
           </div>
           <div v-if="postResult" class="result-box" :class="postResult.ok ? 'r-ok' : 'r-err'">
-            <span v-if="postResult.ok">✓ Bounty #{{ postResult.id }} posted — reward locked on-chain</span>
+            <!-- <span v-if="postResult.ok">✓ Bounty #{{ postResult.id }} posted - reward locked on-chain</span> -->
+             <span v-if="postResult.ok">✓ Bounty posted - reward locked on-chain</span>
             <span v-else>✗ {{ postResult.err }}</span>
           </div>
         </div>
@@ -280,7 +281,7 @@
         <template v-else>
           <!-- Bounties I posted that have pending submissions to evaluate -->
           <div v-if="myPostedBountySubmissions.length > 0">
-            <h2 class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Bounties you posted — pending evaluations</h2>
+            <h2 class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Bounties you posted _ pending evaluations</h2>
             <div class="mine-list">
               <div v-for="item in myPostedBountySubmissions" :key="'ps-'+item.sub.id" class="mine-card">
                 <div class="mine-top">
@@ -433,7 +434,7 @@
 
 <script setup lang="ts">
 // ─────────────────────────────────────────────────
-// ALL IMPORTS — this is the critical section
+// ALL IMPORTS _ this is the critical section
 // ─────────────────────────────────────────────────
 
 import { ref, computed, onMounted, nextTick } from 'vue'
@@ -575,7 +576,7 @@ async function importWallet(){
   walletError.value = ''
   const k = importKeyInput.value.trim()
   if(!/^0x[0-9a-fA-F]{64}$/.test(k)){
-    walletError.value = 'Invalid key — must start with 0x followed by 64 hex characters'
+    walletError.value = 'Invalid key _ must start with 0x followed by 64 hex characters'
     return
   }
   try {
@@ -596,7 +597,7 @@ function disconnect(){
   walletAddress.value = ''
   balance.value = '0.00'
   account.value = null
-  // Do NOT clear localStorage — let them reconnect easily
+  // Do NOT clear localStorage _ let them reconnect easily
   showToast('Wallet disconnected')
 }
 
@@ -739,7 +740,7 @@ const wei = BigInt(Math.round(rewardNum * 1e9)) * BigInt('1000000000')
     // 2️⃣ wait for transaction confirmation
     const receipt = await (client as any).waitForTransactionReceipt({ hash: txHash })
 
-    // 3️⃣ check success — GenLayer receipts use result_name not status
+    // 3️⃣ check success _ GenLayer receipts use result_name not status
     const ok = receipt?.result_name === 'MAJORITY_AGREE'
       || receipt?.status === 'success'
       || receipt?.status === 5
@@ -813,7 +814,7 @@ async function doSubmit(bountyId: number) {
 }
 
 // ----- Evaluate submission -----
-// bountyId is optional — passed when called from My Activity so we can reload
+// bountyId is optional _ passed when called from My Activity so we can reload
 async function doEvaluate(subId: number, bountyId?: number) {
   if(!requireWallet()) return
   evaluatingId.value = subId // Track the specific ID
@@ -841,11 +842,11 @@ async function doEvaluate(subId: number, bountyId?: number) {
         ?? myPostedBountySubmissions.value.find(i => i.sub.id === subId)?.sub
       if(updated){
         const resultMsg = updated.status === 'approved'
-          ? `✓ Approved! Score: ${updated.score}/100 — reward sent to creator`
-          : `✗ Rejected. Score: ${updated.score}/100 — ${updated.feedback}`
+          ? `✓ Approved! Score: ${updated.score}/100 _ reward sent to creator`
+          : `✗ Rejected. Score: ${updated.score}/100 _ ${updated.feedback}`
         showToast(resultMsg, updated.status === 'approved' ? 'ok' : 'err')
       } else {
-        showToast('Evaluation complete — refresh to see result')
+        showToast('Evaluation complete _ refresh to see result')
       }
     } else {
       throw new Error('Evaluation failed on-chain.')
