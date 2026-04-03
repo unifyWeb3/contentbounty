@@ -65,8 +65,8 @@
           <div v-if="walletView === 'import'" class="wallet-import-form">
             <button class="btn-back" @click="walletView = null">← Back</button>
             <label class="field-label">Private key</label>
-            <input v-model="importKeyInput" class="input" type="password"
-              placeholder="0x... (64 hex characters)" autocomplete="off" />
+            <input v-model="importKeyInput" class="input" type="text"
+              placeholder="0x... (64 hex characters)" autocomplete="new-password" spellchecker:false/>
             <p v-if="walletError" class="modal-error">{{ walletError }}</p>
             <button class="btn-primary w-full mt-16" @click="importWallet"
               :disabled="!importKeyInput">Import & Connect</button>
