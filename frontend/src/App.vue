@@ -22,7 +22,7 @@
         <div class="wallet-area">
           <template v-if="connected">
             <span class="wallet-pill" :title="walletAddress">{{ shortAddr(walletAddress) }}</span>
-            <span class="bal-pill" title="GenLayer Studio _ simulated GEN (unlimited for testing)">∞ GEN</span>
+            <span class="bal-pill" :title="'On-chain balance: ' + balance + ' GEN'">{{ balance }} GEN</span>
             <button class="btn-icon" @click="refreshBalance" title="Refresh">↻</button>
             <button class="btn-disconnect" @click="disconnect">×</button>
           </template>
@@ -464,10 +464,16 @@ const PK_KEY     = 'cb_pk_v2'
 // Passing account:{} makes genlayer-js skip the window.ethereum branch entirely
 const client = createClient({ chain: studionet, account: {} as any })
 
+// Studio/simulated networks waive fees and do not expose reliable balances,
+// so balance-based validation is only meaningful on production networks.
+const IS_STUDIO = (studionet as any).isStudio === true
+
 // ── Wallet state ──────────────────────────────────
 const connected      = ref(false)
 const walletAddress  = ref('')
-const balance        = ref('0.00')
+const balance        = ref('0.0000')
+const balanceWei     = ref<bigint>(0n)
+const balanceKnown   = ref(false)
 const account        = ref<any>(null)
 const showWalletModal= ref(false)
 const walletView     = ref<'import'|'created'|null>(null)
@@ -543,6 +549,14 @@ function formatGEN(wei:number|string){
   const g=n/1e18
   return g<0.0001 ? n+' wei' : g.toFixed(4)
 }
+// BigInt-safe wei -> GEN string. Avoids Number() overflow that turned large
+// balances into "Infinity"; always returns a finite, fixed-decimal string.
+function weiToGEN(wei:bigint, decimals=4):string{
+  const base = 10n ** 18n
+  const whole = wei / base
+  const frac = ((wei % base) * (10n ** BigInt(decimals))) / base
+  return whole.toString() + '.' + frac.toString().padStart(decimals,'0')
+}
 function showToast(msg:string, type='ok'){
   toast.value={msg,type}
   setTimeout(()=>{ toast.value=null },5000)
@@ -616,8 +630,16 @@ async function fetchBalance(){
       body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[walletAddress.value,'latest']})
     })
     const d = await r.json()
-    if(d.result) balance.value = (Number(BigInt(d.result))/1e18).toFixed(4)
-  } catch { balance.value='?' }
+    if(d.error) throw new Error(d.error.message || 'balance RPC error')
+    const wei = BigInt(d.result ?? '0x0')
+    balanceWei.value = wei
+    balance.value = weiToGEN(wei)
+    balanceKnown.value = true
+  } catch {
+    balanceWei.value = 0n
+    balance.value = '—'
+    balanceKnown.value = false
+  }
 }
 
 function refreshBalance(){ fetchBalance(); showToast('Balance refreshed') }
