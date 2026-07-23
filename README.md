@@ -19,6 +19,22 @@ and no way for any single party to fake the outcome.
 
 ---
 
+**Contents:**
+[What](#1-what-is-contentbounty) ·
+[Why GenLayer](#2-why-genlayer) ·
+[Demo](#3-demo) ·
+[Architecture](#4-architecture) ·
+[Evaluation pipeline](#5-evaluation-pipeline) ·
+[Consensus](#6-consensus-design) ·
+[Security](#7-security) ·
+[Trust model](#8-why-this-is-trustworthy) ·
+[Example](#9-example-evaluation) ·
+[Structure](#10-repository-structure) ·
+[Local dev](#11-local-development) ·
+[Future work](#12-future-work)
+
+---
+
 ## 1. What is ContentBounty?
 
 Content bounties are everywhere — "write a thread about our protocol," "document this API,"
@@ -237,6 +253,10 @@ create a wallet in-app and post/evaluate bounties immediately, no funding requir
 - Support **richer criteria** (e.g. minimum word count, required links) as structured constraints
   alongside the natural-language rubric.
 - Surface a per-bounty **evaluation history** view sourced from contract events.
+
+## License
+
+[MIT](LICENSE) © unifyWeb3
 
 ---
 
