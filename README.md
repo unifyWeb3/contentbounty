@@ -13,7 +13,8 @@ contract releases the escrowed reward — with no trusted server, no manual appr
 and no way for any single party to fake the outcome.
 
 [![Network](https://img.shields.io/badge/network-GenLayer%20Studio-7c3aed)](https://explorer-studio.genlayer.com/address/0xFf546d6B1CD45d2859a705a7FA181807670B9015)
-[![Contract](https://img.shields.io/badge/contract-0xFf54…9015-14b8a6)](https://explorer-studio.genlayer.com/address/0xFf546d6B1CD45d2859a705a7FA181807670B9015)
+[![Contract](https://img.shields.io/badge/contract-view%20on%20explorer-14b8a6)](https://explorer-studio.genlayer.com/address/0xFf546d6B1CD45d2859a705a7FA181807670B9015)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 </div>
 
@@ -96,18 +97,18 @@ in the UI links to its transaction on the GenLayer Studio explorer, so the conse
 
 ```mermaid
 flowchart TD
-    U[User · bounty poster or creator] --> FE[Frontend · Vue + genlayer-js]
-    FE -->|writeContract| IC[Intelligent Contract · ContentBounty.py]
+    U[User: bounty poster or creator] --> FE[Frontend: Vue + genlayer-js]
+    FE -->|writeContract| IC[Intelligent Contract: ContentBounty]
     IC -->|run_nondet_unsafe| L[Leader execution]
-    subgraph ND[Non-deterministic block]
-      L --> W[gl.nondet.web.render · fetch submitted URL]
-      W --> M[gl.nondet.exec_prompt · LLM judges vs criteria]
+    subgraph ND [Non-deterministic block]
+      L --> W[gl.nondet.web.render: fetch submitted URL]
+      W --> M[gl.nondet.exec_prompt: LLM judges vs criteria]
     end
     M --> V[Validators validate the result shape]
-    V --> C{Consensus · equivalence principle}
+    V --> C{Consensus: equivalence principle}
     C -->|majority agree| S[Deterministic settlement]
-    S -->|approved| P[emit_transfer · escrow → creator]
-    S -->|rejected| K[No payout · reward stays escrowed]
+    S -->|approved| P[emit_transfer: escrow to creator]
+    S -->|rejected| K[No payout: reward stays escrowed]
     C -->|no agreement| R[Transaction does not finalize]
 ```
 
