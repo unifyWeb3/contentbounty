@@ -241,8 +241,8 @@
                   <p v-if="s.feedback" class="sub-feedback">{{ s.feedback }}</p>
                   <!-- Only the bounty poster can trigger evaluation -->
                   <button v-if="s.status === 'pending' && isPoster(selectedBounty)" class="btn-eval"
-                    @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
-                    {{ evaluatingId === item.sub.id ? 'AI evaluating…' : ' Evaluate this submission' }}
+                    @click="doEvaluate(s.id, s.bounty_id)" :disabled="evaluatingId !== null || manualAction">
+                    {{ evaluatingId === s.id ? 'AI evaluating…' : ' Evaluate this submission' }}
                   </button>
 
                 </div>
@@ -345,16 +345,16 @@
                   <div class="mine-fb"><label class="field-label">AI Feedback</label><p>{{ item.sub.feedback }}</p></div>
                 </div>
                 <div v-if="item.sub.status === 'pending'" class="mine-pending" style="flex-direction:column;gap:.75rem;align-items:stretch">
-                  <button class="btn-eval" @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction">
-                    {{ evaluating ? 'AI evaluating…' : '⚡ AI Evaluate' }}
+                  <button class="btn-eval" @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
+                    {{ evaluatingId === item.sub.id ? 'AI evaluating…' : '⚡ AI Evaluate' }}
                   </button>
                   <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                     <input v-model="manualReward[item.sub.id]" class="input" style="max-width:120px" type="number" min="1" placeholder="Reward (GEN)" />
                     <input v-model="manualFeedback[item.sub.id]" class="input" style="flex:1;min-width:140px" placeholder="Feedback message" />
-                    <button class="btn-primary" style="white-space:nowrap" @click="doApprove(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction || !manualReward[item.sub.id]">
+                    <button class="btn-primary" style="white-space:nowrap" @click="doApprove(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction || !manualReward[item.sub.id]">
                       {{ manualAction ? '…' : '✓ Approve' }}
                     </button>
-                    <button class="btn-admin-cancel" @click="doReject(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction">
+                    <button class="btn-admin-cancel" @click="doReject(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
                       {{ manualAction ? '…' : '✗ Reject' }}
                     </button>
                   </div>
@@ -937,6 +937,9 @@ async function doSubmit(bountyId: number) {
 // bountyId is optional _ passed when called from My Activity so we can reload
 async function doEvaluate(subId: number, bountyId?: number) {
   if(!requireWallet()) return
+  // Re-entrancy guard: only one evaluation transaction may be in flight at a
+  // time, so a submission can't be evaluated twice (covers rapid double-clicks).
+  if(evaluatingId.value !== null) return
   evaluatingId.value = subId // Track the specific ID
   showToast('AI evaluation started - validators are reading the content…')
 
