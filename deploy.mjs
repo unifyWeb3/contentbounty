@@ -20,15 +20,17 @@ try {
   console.log('Tx submitted:', tx)
   console.log('Waiting for receipt...')
   const receipt = await client.waitForTransactionReceipt({ hash: tx, retries: 40, interval: 3000 })
-  console.log('Receipt:', JSON.stringify(receipt, null, 2))
   const address = receipt?.data?.contract_address
     ?? receipt?.contractAddress
     ?? receipt?.result?.contract_address
   if (address) {
     console.log('\n✅ DEPLOYED!')
     console.log('VITE_CONTRACT_ADDRESS=' + address)
+    console.log('Explorer: https://explorer-studio.genlayer.com/address/' + address)
+    console.log('\nNext: put that address in frontend/.env, then `cd frontend && npm run dev`.')
   } else {
-    console.log('\nNo address in receipt. Full receipt logged above.')
+    console.log('\nNo contract address in receipt:')
+    console.log(JSON.stringify(receipt, null, 2))
   }
 } catch (e) {
   console.error('Error:', e?.message ?? e)
