@@ -146,9 +146,16 @@
         </div>
 
         <div v-if="loading" class="state-row"><span class="pulse">Fetching on-chain data…</span></div>
+        <div v-else-if="bountiesError" class="empty-state error-state">
+          <span class="ei">⚠</span>
+          <p>Couldn't load bounties.</p>
+          <p class="es-detail">{{ bountiesError }}</p>
+          <button class="btn-primary" @click="loadBounties">Try again</button>
+        </div>
         <div v-else-if="bounties.length === 0" class="empty-state">
           <span class="ei">◌</span>
           <p>No open bounties yet. Be the first to post one.</p>
+          <button class="btn-ghost" @click="activeTab = 'post'">Post a bounty</button>
         </div>
 
         <div v-else class="bounty-grid">
@@ -316,6 +323,8 @@
           <button class="btn-primary" @click="showWalletModal = true">Connect Wallet</button>
         </div>
         <template v-else>
+          <div v-if="loading && mySubmissions.length === 0 && myPostedBountySubmissions.length === 0"
+            class="state-row"><span class="pulse">Loading your activity…</span></div>
           <!-- Bounties I posted that have pending submissions to evaluate -->
           <div v-if="myPostedBountySubmissions.length > 0">
             <h2 class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Bounties you posted _ pending evaluations</h2>
@@ -356,9 +365,10 @@
 
           <!-- My own submissions to other bounties -->
           <h2 v-if="mySubmissions.length > 0" class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Your submissions</h2>
-          <div v-if="mySubmissions.length === 0 && myPostedBountySubmissions.length === 0" class="empty-state">
+          <div v-if="!loading && mySubmissions.length === 0 && myPostedBountySubmissions.length === 0" class="empty-state">
             <span class="ei">◌</span>
             <p>No activity yet.</p>
+            <button class="btn-ghost" @click="activeTab = 'browse'">Browse bounties</button>
           </div>
           <div v-if="mySubmissions.length > 0" class="mine-list">
             <div v-for="s in mySubmissions" :key="s.id" class="mine-card">
@@ -548,6 +558,7 @@ const posting       = ref(false)
 const submitting    = ref(false)
 const evaluatingId = ref<number | null>(null)
 const bounties      = ref<Bounty[]>([])
+const bountiesError = ref('')
 const allBounties   = ref<Bounty[]>([])
 const selectedBounty= ref<Bounty|null>(null)
 const selectedId    = ref<number|null>(null)
@@ -724,13 +735,17 @@ function refreshBalance(){ fetchBalance(); showToast('Balance refreshed') }
 // ── Contract reads ─────────────────────────────────
 async function loadBounties(){
   loading.value=true
+  bountiesError.value=''
   try {
+    if(!CONTRACT) throw new Error('No contract address configured (VITE_CONTRACT_ADDRESS).')
     const r = await (client as any).readContract({
       address:CONTRACT, functionName:'get_all_bounties', args:[]
     })
     bounties.value = Array.isArray(r) ? [...r].reverse() : []
   } catch(e:any){
-    showToast('Could not load bounties: '+(e?.message??String(e)),'err')
+    // Keep the inline error concise; the raw RPC message can be very long.
+    bountiesError.value = (e?.message ?? String(e)).split('\n')[0].slice(0,140)
+    showToast('Could not load bounties','err')
   } finally { loading.value=false }
 }
 
@@ -1273,6 +1288,8 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 /* States */
 .state-row{padding:60px 0;text-align:center;color:var(--d)}
 .empty-state{padding:80px 0;text-align:center;color:var(--d);display:flex;flex-direction:column;align-items:center;gap:12px}
+.error-state .ei{color:#f87171}
+.es-detail{font-family:var(--fm);font-size:12px;color:var(--d);max-width:520px;word-break:break-word}
 .ei{font-size:32px}
 .pulse{animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
