@@ -464,7 +464,10 @@ interface Submission {
 
 // ── Config ────────────────────────────────────────
 const CONTRACT = import.meta.env.VITE_CONTRACT_ADDRESS
-// const ADMIN_ADDR = (import.meta.env.VITE_ADMIN_ADDRESS as string ?? '').toLowerCase()
+// Undefined when VITE_ADMIN_ADDRESS is unset, so isAdmin stays false (admin hidden).
+// Declared (not left commented) so the isAdmin computed can't throw ReferenceError
+// once a wallet connects and the && no longer short-circuits before this name.
+const ADMIN_ADDR = ((import.meta.env.VITE_ADMIN_ADDRESS as string) ?? '').toLowerCase()
 const STUDIO_RPC = 'https://studio.genlayer.com/api'
 const PK_KEY     = 'cb_pk_v2'
 
