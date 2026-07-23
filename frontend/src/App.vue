@@ -246,13 +246,21 @@
           </div>
           <div class="form-row">
             <label class="field-label">Reward (GEN) *</label>
-            <p class="field-hint">Locked in contract until a submission is approved. Balance: ∞ GEN (simulated)</p>
+            <p class="field-hint">
+              Locked in contract until a submission is approved.
+              Balance: {{ connected ? balance + ' GEN' : '—' }}
+            </p>
             <input v-model="form.rewardGEN" class="input" style="max-width:200px"
+              :class="{ 'input-error': rewardExceedsBalance }"
               type="number" min="1" step="1" placeholder="e.g. 10" />
+            <p v-if="connected && rewardExceedsBalance" class="field-error">
+              ⚠ {{ rewardValidationMsg }}
+            </p>
+            <p v-else-if="connected && IS_STUDIO" class="field-note">{{ rewardValidationMsg }}</p>
           </div>
           <div class="form-foot">
             <button class="btn-primary btn-lg" @click="doPostBounty"
-              :disabled="posting || !form.title || !form.criteria || !form.rewardGEN">
+              :disabled="posting || !form.title || !form.criteria || !form.rewardGEN || rewardExceedsBalance">
               {{ posting ? 'Posting…' : '◈ Post & Lock Reward' }}
             </button>
           </div>
@@ -522,6 +530,27 @@ const totalLockedGEN= computed(() =>
     .reduce((s,b) => s + b.reward/1e18, 0).toFixed(2)
 )
 
+// Reward-vs-balance validation for the Post form.
+// Reward the user typed, converted to wei (same rounding as doPostBounty).
+const rewardWei = computed<bigint>(() => {
+  const n = parseFloat(form.value.rewardGEN)
+  if(!n || n <= 0 || !isFinite(n)) return 0n
+  return BigInt(Math.round(n * 1e9)) * 1_000_000_000n
+})
+// Environment-aware: studio waives fees and reports 0/unreliable balances, so we
+// never block there. On production networks we strictly enforce reward <= balance.
+const balanceEnforced = computed(() => !IS_STUDIO && balanceKnown.value)
+const rewardExceedsBalance = computed(() =>
+  balanceEnforced.value && rewardWei.value > balanceWei.value
+)
+const rewardValidationMsg = computed(() => {
+  if(rewardExceedsBalance.value)
+    return `Reward exceeds your wallet balance of ${balance.value} GEN`
+  if(IS_STUDIO)
+    return 'Balance validation is unavailable on GenLayer Studio (fees simulated).'
+  return ''
+})
+
 // ── Helpers ───────────────────────────────────────
 function isPoster(b:Bounty|null){
   if(!b||!connected.value) return false
@@ -746,6 +775,12 @@ async function doPostBounty() {
     const rewardNum = parseFloat(form.value.rewardGEN)
 if (!rewardNum || rewardNum <= 0) {
   postResult.value = { ok: false, err: 'Please enter a reward amount greater than 0' }
+  posting.value = false
+  return
+}
+// Guard before signing: on production networks reject rewards over balance.
+if (rewardExceedsBalance.value) {
+  postResult.value = { ok: false, err: rewardValidationMsg.value }
   posting.value = false
   return
 }
@@ -1116,6 +1151,9 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .mono{font-family:var(--fm);font-size:13px}
 .field-label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--m)}
 .field-hint{font-size:12px;color:var(--d);margin-top:4px;line-height:1.5}
+.field-note{font-size:12px;color:var(--m);margin-top:6px;line-height:1.5}
+.field-error{font-size:12px;color:#f87171;margin-top:6px;line-height:1.5}
+.input-error{border-color:rgba(220,60,60,.6) !important}
 .form-foot{margin-top:28px}
 .result-box{margin-top:16px;padding:12px 16px;border-radius:var(--r);font-size:13px;font-family:var(--fm)}
 .r-ok{background:var(--tp);border:1px solid var(--teal);color:var(--tl)}
