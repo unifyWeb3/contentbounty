@@ -239,6 +239,10 @@
                     <span v-if="s.status !== 'pending'">Score: {{ s.score }}/100</span>
                   </div>
                   <p v-if="s.feedback" class="sub-feedback">{{ s.feedback }}</p>
+                  <!-- AI evaluation evidence: proves an evaluation genuinely ran -->
+                  <p v-if="evalInfo[s.id]" class="eval-evidence">
+                    ⚖ GenLayer AI · consensus {{ evalInfo[s.id].agreeCount }}/{{ evalInfo[s.id].validatorCount }} validators · {{ evalInfo[s.id].durationSec }}s
+                  </p>
                   <!-- Only the bounty poster can trigger evaluation -->
                   <button v-if="s.status === 'pending' && isPoster(selectedBounty)" class="btn-eval"
                     @click="doEvaluate(s.id, s.bounty_id)" :disabled="evaluatingId !== null || manualAction">
@@ -557,6 +561,10 @@ const loading       = ref(false)
 const posting       = ref(false)
 const submitting    = ref(false)
 const evaluatingId = ref<number | null>(null)
+// Per-submission AI evaluation evidence, captured from the evaluation receipt
+// so the UI can prove an evaluation genuinely ran (verdict/consensus/duration).
+interface EvalInfo { verdict:'approved'|'rejected'|'error'; score?:number; durationSec:number; agreeCount:number; validatorCount:number; sourceUrl?:string }
+const evalInfo      = ref<Record<number, EvalInfo>>({})
 const bounties      = ref<Bounty[]>([])
 const bountiesError = ref('')
 const allBounties   = ref<Bounty[]>([])
@@ -849,12 +857,13 @@ if (rewardExceedsBalance.value) {
 }
 const wei = BigInt(Math.round(rewardNum * 1e9)) * BigInt('1000000000')
 
-    // 1️⃣ send tx
+    // 1️⃣ send tx — reward is escrowed as the payable call value
     const txHash = await (client as any).writeContract({
       account: account.value,
       address: CONTRACT,
       functionName: 'post_bounty',
-      args: [form.value.title, form.value.description, form.value.criteria, wei],
+      args: [form.value.title, form.value.description, form.value.criteria],
+      value: wei,
     })
 
     // 2️⃣ wait for transaction confirmation
@@ -941,6 +950,7 @@ async function doEvaluate(subId: number, bountyId?: number) {
   // time, so a submission can't be evaluated twice (covers rapid double-clicks).
   if(evaluatingId.value !== null) return
   evaluatingId.value = subId // Track the specific ID
+  const startedAt = Date.now()
   showToast('AI evaluation started - validators are reading the content…')
 
   try {
@@ -952,27 +962,43 @@ async function doEvaluate(subId: number, bountyId?: number) {
     })
 
     const receipt = await (client as any).waitForTransactionReceipt({ hash: txHash })
+    const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
 
-    const ok = receipt?.result_name === 'MAJORITY_AGREE' || receipt?.status === 'success' || receipt?.status === 5
-    if(ok){
-      // Reload submissions to get updated status/score/feedback
-      const reloadId = bountyId ?? selectedBounty.value?.id
-      if(reloadId != null) await loadSubmissionsFor(reloadId)
-      await loadMine()
+    // Inspect the actual leader execution + consensus, not just result_name.
+    const consensusReached = receipt?.result_name === 'MAJORITY_AGREE' || receipt?.status === 'success' || receipt?.status === 5
+    const { leaderOk, agreeCount, validatorCount } = readLeaderOutcome(receipt)
 
-      // Find the updated submission to show result
-      const updated = submissions.value.find(s => s.id === subId)
-        ?? myPostedBountySubmissions.value.find(i => i.sub.id === subId)?.sub
-      if(updated){
-        const resultMsg = updated.status === 'approved'
-          ? `✓ Approved! Score: ${updated.score}/100 _ reward sent to creator`
-          : `✗ Rejected. Score: ${updated.score}/100 _ ${updated.feedback}`
-        showToast(resultMsg, updated.status === 'approved' ? 'ok' : 'err')
-      } else {
-        showToast('Evaluation complete _ refresh to see result')
+    if(!consensusReached){
+      throw new Error('Validators did not reach consensus.')
+    }
+    // Critical: a reverted/errored evaluation is NOT a rejection. Surface it as
+    // an evaluation error instead of silently painting "Rejected 0/100".
+    if(!leaderOk){
+      evalInfo.value[subId] = { verdict: 'error', durationSec, agreeCount, validatorCount }
+      showToast('Evaluation could not complete on-chain — please try again.', 'err')
+      return
+    }
+
+    // Reload submissions to get updated status/score/feedback
+    const reloadId = bountyId ?? selectedBounty.value?.id
+    if(reloadId != null) await loadSubmissionsFor(reloadId)
+    await loadMine()
+
+    const updated = submissions.value.find(s => s.id === subId)
+      ?? myPostedBountySubmissions.value.find(i => i.sub.id === subId)?.sub
+
+    if(updated && (updated.status === 'approved' || updated.status === 'rejected')){
+      evalInfo.value[subId] = {
+        verdict: updated.status, score: updated.score, durationSec, agreeCount, validatorCount,
+        sourceUrl: updated.content_url,
       }
+      const resultMsg = updated.status === 'approved'
+        ? `✓ Approved (score ${updated.score}/100) — reward sent to creator`
+        : `Rejected (score ${updated.score}/100) — ${updated.feedback}`
+      showToast(resultMsg, updated.status === 'approved' ? 'ok' : 'err')
     } else {
-      throw new Error('Evaluation failed on-chain.')
+      // Consensus + leader OK but status unchanged: don't claim a verdict.
+      showToast('Evaluation finished — refresh to see the result.')
     }
 
   } catch(e:any) {
@@ -980,6 +1006,23 @@ async function doEvaluate(subId: number, bountyId?: number) {
   } finally {
     evaluatingId.value = null // Reset it
   }
+}
+
+// Extract whether the leader executed successfully and the validator agreement
+// from a GenLayer receipt, tolerant of shape differences across networks.
+function readLeaderOutcome(receipt:any){
+  const cd = receipt?.consensus_data ?? receipt?.data?.consensus_data ?? {}
+  const votes = cd?.votes ?? {}
+  const values = Object.values(votes) as string[]
+  const agreeCount = values.filter(v => v === 'agree').length
+  const validatorCount = values.length
+  const lrRaw = cd?.leader_receipt
+  const lr = Array.isArray(lrRaw) ? lrRaw[0] : lrRaw
+  const exec = lr?.execution_result
+  // If we can read the leader execution result, trust it; if the field is
+  // absent (finalized receipt), fall back to consensus success.
+  const leaderOk = exec == null ? true : exec === 'SUCCESS'
+  return { leaderOk, agreeCount, validatorCount }
 }
 
 // ----- Manual approve with custom reward -----
@@ -1241,6 +1284,7 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .sub-url{font-family:var(--fm);font-size:12px;color:var(--m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
 .sub-meta{font-size:12px;color:var(--d);display:flex;gap:16px;margin-bottom:4px}
 .sub-feedback{font-size:13px;color:var(--m);font-style:italic}
+.eval-evidence{font-family:var(--fm);font-size:11px;color:var(--tl);margin-top:6px;letter-spacing:.02em}
 
 /* Form */
 .form-card{max-width:680px;background:var(--sur);border:1px solid var(--b);border-radius:var(--rl);padding:32px}
