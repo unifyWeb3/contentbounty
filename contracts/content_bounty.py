@@ -1,9 +1,20 @@
-# v0.1.0
-# { "Depends": "py-genlayer:latest" }
+# v0.2.0
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 from genlayer import *
+import genlayer.gl.vm as glvm
 import json
 from dataclasses import dataclass
+
+
+# Recipient handle used to emit native GEN transfers to any address.
+@gl.evm.contract_interface
+class _Recipient:
+    class View:
+        pass
+
+    class Write:
+        pass
 
 
 @allow_storage
@@ -42,8 +53,11 @@ class ContentBounty(gl.Contract):
         self.bounty_count = u256(0)
         self.submission_count = u256(0)
 
-    @gl.public.write
-    def post_bounty(self, title: str, description: str, criteria: str, reward: u256) -> u256:
+    @gl.public.write.payable
+    def post_bounty(self, title: str, description: str, criteria: str) -> u256:
+        # The reward is escrowed in the contract via the payable call value,
+        # so approvals/cancellations pay out from real, locked funds.
+        reward = gl.message.value
         assert len(title) > 0, "Title cannot be empty"
         assert len(criteria) > 0, "Criteria cannot be empty"
         assert int(reward) > 0, "Reward must be greater than 0"
@@ -95,8 +109,22 @@ class ContentBounty(gl.Contract):
         criteria = bounty.criteria
         content_url = submission.content_url
 
+        # Leader closure: fetch the submitted URL and ask the LLM to judge it
+        # against the bounty criteria. Runs on the leader; validators re-check
+        # the SHAPE of this result via validate_evaluation below (equivalence
+        # principle), so honest LLM score variance does not break consensus.
         def get_evaluation() -> dict:
-            page = gl.nondet.web.render(content_url, mode="text")
+            # A fetch failure is a genuine, explained rejection — never a revert.
+            try:
+                page = gl.nondet.web.render(content_url, mode="text")
+            except Exception:
+                return {"approved": False, "score": 0,
+                        "feedback": "Could not load the submitted URL."}
+
+            if page is None or len(page.strip()) == 0:
+                return {"approved": False, "score": 0,
+                        "feedback": "The submitted URL returned no readable content."}
+
             preview = page[:3000] if len(page) > 3000 else page
 
             prompt = f"""You are a content evaluator for a Web3 bounty platform.
@@ -123,7 +151,8 @@ approved must be true or false. score is 0-100."""
                     result = json.loads(result[start:end + 1])
 
             if not isinstance(result, dict):
-                raise Exception("Bad LLM response")
+                return {"approved": False, "score": 0,
+                        "feedback": "The evaluator returned an unreadable response."}
 
             approved = result.get("approved", False)
             if isinstance(approved, str):
@@ -138,8 +167,10 @@ approved must be true or false. score is 0-100."""
             feedback = str(result.get("feedback", "Evaluated."))
             return {"approved": bool(approved), "score": score, "feedback": feedback}
 
+        # Validator closure: accept any well-formed evaluation. Shape-only so the
+        # LLM's non-deterministic wording/score doesn't cause consensus failure.
         def validate_evaluation(leader_result) -> bool:
-            if not isinstance(leader_result, gl.vm.Return):
+            if not isinstance(leader_result, glvm.Return):
                 return False
             d = leader_result.calldata
             if not isinstance(d, dict):
@@ -151,22 +182,19 @@ approved must be true or false. score is 0-100."""
                 return False
             return isinstance(d.get("feedback"), str)
 
-        eval_result = {"approved": True, "score": 100, "feedback": "test"}
+        # Real non-deterministic AI evaluation under GenLayer consensus.
+        eval_result = glvm.run_nondet_unsafe(get_evaluation, validate_evaluation)
 
         idx = int(submission_id)
-        self.submissions[idx].status = "approved" if eval_result["approved"] else "rejected"
-        self.submissions[idx].score = u256(eval_result["score"])
-        self.submissions[idx].feedback = eval_result["feedback"]
+        approved = bool(eval_result["approved"])
+        self.submissions[idx].status = "approved" if approved else "rejected"
+        self.submissions[idx].score = u256(int(eval_result["score"]))
+        self.submissions[idx].feedback = str(eval_result["feedback"])
 
-        if eval_result["approved"]:
+        if approved:
             bidx = int(submission.bounty_id)
             self.bounties[bidx].status = "filled"
-            creator = submission.creator
-            reward = bounty.reward
-            gl.transfer(Address(creator), reward)
-            # gl.get_contract_at(Address(creator)).emit(
-            #     value=reward, on="finalized"
-            # ).transfer(Address(creator))
+            _Recipient(Address(submission.creator)).emit_transfer(value=bounty.reward)
 
     @gl.public.write
     def approve_with_reward(self, submission_id: u256, custom_reward: u256, feedback: str) -> None:
@@ -177,6 +205,7 @@ approved must be true or false. score is 0-100."""
         assert bounty.poster == str(gl.message.sender_address), "Only poster can approve"
         assert bounty.status == "open", "Bounty closed"
         assert int(custom_reward) > 0, "Reward must be greater than 0"
+        assert int(custom_reward) <= int(bounty.reward), "Reward exceeds escrowed amount"
 
         idx = int(submission_id)
         self.submissions[idx].status = "approved"
@@ -185,7 +214,12 @@ approved must be true or false. score is 0-100."""
 
         bidx = int(submission.bounty_id)
         self.bounties[bidx].status = "filled"
-        gl.transfer(Address(submission.creator), custom_reward)
+
+        # Pay the creator the chosen amount; refund any remainder to the poster.
+        _Recipient(Address(submission.creator)).emit_transfer(value=custom_reward)
+        remainder = u256(int(bounty.reward) - int(custom_reward))
+        if int(remainder) > 0:
+            _Recipient(Address(bounty.poster)).emit_transfer(value=remainder)
 
     @gl.public.write
     def reject_submission(self, submission_id: u256, feedback: str) -> None:
@@ -207,10 +241,10 @@ approved must be true or false. score is 0-100."""
         assert bounty.poster == str(gl.message.sender_address), "Not the poster"
         assert bounty.status == "open", "Cannot cancel"
 
-        poster = bounty.poster
         reward = bounty.reward
         self.bounties[int(bounty_id)].status = "cancelled"
-        gl.transfer(Address(poster), reward)
+        # Refund the escrowed reward to the poster.
+        _Recipient(Address(bounty.poster)).emit_transfer(value=reward)
 
     @gl.public.view
     def get_bounty(self, bounty_id: u256) -> dict:
@@ -228,7 +262,7 @@ approved must be true or false. score is 0-100."""
 
     @gl.public.view
     def get_all_bounties(self) -> list:
-        
+
         result = []
         for i in range(int(self.bounty_count)):
             b = self.bounties[i]

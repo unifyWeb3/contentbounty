@@ -20,12 +20,41 @@
           </button>
         </nav>
         <div class="wallet-area">
-          <template v-if="connected">
-            <span class="wallet-pill" :title="walletAddress">{{ shortAddr(walletAddress) }}</span>
-            <span class="bal-pill" title="GenLayer Studio _ simulated GEN (unlimited for testing)">∞ GEN</span>
-            <button class="btn-icon" @click="refreshBalance" title="Refresh">↻</button>
-            <button class="btn-disconnect" @click="disconnect">×</button>
-          </template>
+          <div v-if="connected" class="wallet-menu">
+            <button class="wallet-trigger" :class="{ open: walletMenuOpen }"
+              @click="walletMenuOpen = !walletMenuOpen" :title="walletAddress">
+              <span class="wt-dot"></span>
+              <span class="wt-addr">{{ shortAddr(walletAddress) }}</span>
+              <span class="wt-bal">{{ balance }} GEN</span>
+              <span class="wt-caret">▾</span>
+            </button>
+            <div v-if="walletMenuOpen" class="wallet-backdrop" @click="walletMenuOpen = false"></div>
+            <Transition name="fade">
+              <div v-if="walletMenuOpen" class="wallet-dropdown">
+                <div class="wd-section">
+                  <span class="wd-label">Connected wallet</span>
+                  <span class="wd-full">{{ walletAddress }}</span>
+                </div>
+                <div class="wd-balrow">
+                  <div>
+                    <span class="wd-label">Balance</span>
+                    <span class="wd-bal">{{ balance }} GEN</span>
+                  </div>
+                  <button class="btn-icon" @click="refreshBalance" title="Refresh balance">↻</button>
+                </div>
+                <button class="wd-item" @click="copyAddress">
+                  <span>⧉</span> {{ copiedAddr ? 'Copied!' : 'Copy address' }}
+                </button>
+                <a class="wd-item" :href="explorerUrl" target="_blank" rel="noopener noreferrer"
+                  @click="walletMenuOpen = false">
+                  <span>↗</span> View on explorer
+                </a>
+                <button class="wd-item wd-danger" @click="disconnect(); walletMenuOpen = false">
+                  <span>⏻</span> Disconnect
+                </button>
+              </div>
+            </Transition>
+          </div>
           <button v-else class="btn-connect-wallet" @click="showWalletModal = true">
             Connect Wallet
           </button>
@@ -117,9 +146,16 @@
         </div>
 
         <div v-if="loading" class="state-row"><span class="pulse">Fetching on-chain data…</span></div>
+        <div v-else-if="bountiesError" class="empty-state error-state">
+          <span class="ei">⚠</span>
+          <p>Couldn't load bounties.</p>
+          <p class="es-detail">{{ bountiesError }}</p>
+          <button class="btn-primary" @click="loadBounties">Try again</button>
+        </div>
         <div v-else-if="bounties.length === 0" class="empty-state">
           <span class="ei">◌</span>
           <p>No open bounties yet. Be the first to post one.</p>
+          <button class="btn-ghost" @click="activeTab = 'post'">Post a bounty</button>
         </div>
 
         <div v-else class="bounty-grid">
@@ -203,10 +239,14 @@
                     <span v-if="s.status !== 'pending'">Score: {{ s.score }}/100</span>
                   </div>
                   <p v-if="s.feedback" class="sub-feedback">{{ s.feedback }}</p>
+                  <!-- AI evaluation evidence: proves an evaluation genuinely ran -->
+                  <p v-if="evalInfo[s.id]" class="eval-evidence">
+                    ⚖ GenLayer AI · consensus {{ evalInfo[s.id].agreeCount }}/{{ evalInfo[s.id].validatorCount }} validators · {{ evalInfo[s.id].durationSec }}s
+                  </p>
                   <!-- Only the bounty poster can trigger evaluation -->
                   <button v-if="s.status === 'pending' && isPoster(selectedBounty)" class="btn-eval"
-                    @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
-                    {{ evaluatingId === item.sub.id ? 'AI evaluating…' : ' Evaluate this submission' }}
+                    @click="doEvaluate(s.id, s.bounty_id)" :disabled="evaluatingId !== null || manualAction">
+                    {{ evaluatingId === s.id ? 'AI evaluating…' : ' Evaluate this submission' }}
                   </button>
 
                 </div>
@@ -246,13 +286,21 @@
           </div>
           <div class="form-row">
             <label class="field-label">Reward (GEN) *</label>
-            <p class="field-hint">Locked in contract until a submission is approved. Balance: ∞ GEN (simulated)</p>
+            <p class="field-hint">
+              Locked in contract until a submission is approved.
+              Balance: {{ connected ? balance + ' GEN' : '—' }}
+            </p>
             <input v-model="form.rewardGEN" class="input" style="max-width:200px"
+              :class="{ 'input-error': rewardExceedsBalance }"
               type="number" min="1" step="1" placeholder="e.g. 10" />
+            <p v-if="connected && rewardExceedsBalance" class="field-error">
+              ⚠ {{ rewardValidationMsg }}
+            </p>
+            <p v-else-if="connected && IS_STUDIO" class="field-note">{{ rewardValidationMsg }}</p>
           </div>
           <div class="form-foot">
             <button class="btn-primary btn-lg" @click="doPostBounty"
-              :disabled="posting || !form.title || !form.criteria || !form.rewardGEN">
+              :disabled="posting || !form.title || !form.criteria || !form.rewardGEN || rewardExceedsBalance">
               {{ posting ? 'Posting…' : '◈ Post & Lock Reward' }}
             </button>
           </div>
@@ -279,6 +327,8 @@
           <button class="btn-primary" @click="showWalletModal = true">Connect Wallet</button>
         </div>
         <template v-else>
+          <div v-if="loading && mySubmissions.length === 0 && myPostedBountySubmissions.length === 0"
+            class="state-row"><span class="pulse">Loading your activity…</span></div>
           <!-- Bounties I posted that have pending submissions to evaluate -->
           <div v-if="myPostedBountySubmissions.length > 0">
             <h2 class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Bounties you posted _ pending evaluations</h2>
@@ -299,16 +349,16 @@
                   <div class="mine-fb"><label class="field-label">AI Feedback</label><p>{{ item.sub.feedback }}</p></div>
                 </div>
                 <div v-if="item.sub.status === 'pending'" class="mine-pending" style="flex-direction:column;gap:.75rem;align-items:stretch">
-                  <button class="btn-eval" @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction">
-                    {{ evaluating ? 'AI evaluating…' : '⚡ AI Evaluate' }}
+                  <button class="btn-eval" @click="doEvaluate(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
+                    {{ evaluatingId === item.sub.id ? 'AI evaluating…' : '⚡ AI Evaluate' }}
                   </button>
                   <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
                     <input v-model="manualReward[item.sub.id]" class="input" style="max-width:120px" type="number" min="1" placeholder="Reward (GEN)" />
                     <input v-model="manualFeedback[item.sub.id]" class="input" style="flex:1;min-width:140px" placeholder="Feedback message" />
-                    <button class="btn-primary" style="white-space:nowrap" @click="doApprove(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction || !manualReward[item.sub.id]">
+                    <button class="btn-primary" style="white-space:nowrap" @click="doApprove(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction || !manualReward[item.sub.id]">
                       {{ manualAction ? '…' : '✓ Approve' }}
                     </button>
-                    <button class="btn-admin-cancel" @click="doReject(item.sub.id, item.sub.bounty_id)" :disabled="evaluating || manualAction">
+                    <button class="btn-admin-cancel" @click="doReject(item.sub.id, item.sub.bounty_id)" :disabled="evaluatingId !== null || manualAction">
                       {{ manualAction ? '…' : '✗ Reject' }}
                     </button>
                   </div>
@@ -319,9 +369,10 @@
 
           <!-- My own submissions to other bounties -->
           <h2 v-if="mySubmissions.length > 0" class="section-sub" style="margin:1rem 0 .5rem;font-weight:600">Your submissions</h2>
-          <div v-if="mySubmissions.length === 0 && myPostedBountySubmissions.length === 0" class="empty-state">
+          <div v-if="!loading && mySubmissions.length === 0 && myPostedBountySubmissions.length === 0" class="empty-state">
             <span class="ei">◌</span>
             <p>No activity yet.</p>
+            <button class="btn-ghost" @click="activeTab = 'browse'">Browse bounties</button>
           </div>
           <div v-if="mySubmissions.length > 0" class="mine-list">
             <div v-for="s in mySubmissions" :key="s.id" class="mine-card">
@@ -456,7 +507,10 @@ interface Submission {
 
 // ── Config ────────────────────────────────────────
 const CONTRACT = import.meta.env.VITE_CONTRACT_ADDRESS
-// const ADMIN_ADDR = (import.meta.env.VITE_ADMIN_ADDRESS as string ?? '').toLowerCase()
+// Undefined when VITE_ADMIN_ADDRESS is unset, so isAdmin stays false (admin hidden).
+// Declared (not left commented) so the isAdmin computed can't throw ReferenceError
+// once a wallet connects and the && no longer short-circuits before this name.
+const ADMIN_ADDR = ((import.meta.env.VITE_ADMIN_ADDRESS as string) ?? '').toLowerCase()
 const STUDIO_RPC = 'https://studio.genlayer.com/api'
 const PK_KEY     = 'cb_pk_v2'
 
@@ -464,10 +518,16 @@ const PK_KEY     = 'cb_pk_v2'
 // Passing account:{} makes genlayer-js skip the window.ethereum branch entirely
 const client = createClient({ chain: studionet, account: {} as any })
 
+// Studio/simulated networks waive fees and do not expose reliable balances,
+// so balance-based validation is only meaningful on production networks.
+const IS_STUDIO = (studionet as any).isStudio === true
+
 // ── Wallet state ──────────────────────────────────
 const connected      = ref(false)
 const walletAddress  = ref('')
-const balance        = ref('0.00')
+const balance        = ref('0.0000')
+const balanceWei     = ref<bigint>(0n)
+const balanceKnown   = ref(false)
 const account        = ref<any>(null)
 const showWalletModal= ref(false)
 const walletView     = ref<'import'|'created'|null>(null)
@@ -475,6 +535,14 @@ const importKeyInput = ref('')
 const exportKey      = ref('')
 const walletError    = ref('')
 const copied         = ref(false)
+const walletMenuOpen = ref(false)
+const copiedAddr     = ref(false)
+
+// Block-explorer address link for the active chain (studio -> genlayer-explorer).
+const explorerUrl = computed(() => {
+  const base = ((studionet as any).blockExplorers?.default?.url || '').replace(/\/+$/, '')
+  return base && walletAddress.value ? `${base}/address/${walletAddress.value}` : '#'
+})
 
 const isAdmin = computed(() =>
   connected.value && ADMIN_ADDR && walletAddress.value.toLowerCase() === ADMIN_ADDR
@@ -493,7 +561,12 @@ const loading       = ref(false)
 const posting       = ref(false)
 const submitting    = ref(false)
 const evaluatingId = ref<number | null>(null)
+// Per-submission AI evaluation evidence, captured from the evaluation receipt
+// so the UI can prove an evaluation genuinely ran (verdict/consensus/duration).
+interface EvalInfo { verdict:'approved'|'rejected'|'error'; score?:number; durationSec:number; agreeCount:number; validatorCount:number; sourceUrl?:string }
+const evalInfo      = ref<Record<number, EvalInfo>>({})
 const bounties      = ref<Bounty[]>([])
+const bountiesError = ref('')
 const allBounties   = ref<Bounty[]>([])
 const selectedBounty= ref<Bounty|null>(null)
 const selectedId    = ref<number|null>(null)
@@ -515,6 +588,27 @@ const totalLockedGEN= computed(() =>
   allBounties.value.filter(b=>b.status==='open')
     .reduce((s,b) => s + b.reward/1e18, 0).toFixed(2)
 )
+
+// Reward-vs-balance validation for the Post form.
+// Reward the user typed, converted to wei (same rounding as doPostBounty).
+const rewardWei = computed<bigint>(() => {
+  const n = parseFloat(form.value.rewardGEN)
+  if(!n || n <= 0 || !isFinite(n)) return 0n
+  return BigInt(Math.round(n * 1e9)) * 1_000_000_000n
+})
+// Environment-aware: studio waives fees and reports 0/unreliable balances, so we
+// never block there. On production networks we strictly enforce reward <= balance.
+const balanceEnforced = computed(() => !IS_STUDIO && balanceKnown.value)
+const rewardExceedsBalance = computed(() =>
+  balanceEnforced.value && rewardWei.value > balanceWei.value
+)
+const rewardValidationMsg = computed(() => {
+  if(rewardExceedsBalance.value)
+    return `Reward exceeds your wallet balance of ${balance.value} GEN`
+  if(IS_STUDIO)
+    return 'Balance validation is unavailable on GenLayer Studio (fees simulated).'
+  return ''
+})
 
 // ── Helpers ───────────────────────────────────────
 function isPoster(b:Bounty|null){
@@ -542,6 +636,14 @@ function formatGEN(wei:number|string){
   if(!n) return '0'
   const g=n/1e18
   return g<0.0001 ? n+' wei' : g.toFixed(4)
+}
+// BigInt-safe wei -> GEN string. Avoids Number() overflow that turned large
+// balances into "Infinity"; always returns a finite, fixed-decimal string.
+function weiToGEN(wei:bigint, decimals=4):string{
+  const base = 10n ** 18n
+  const whole = wei / base
+  const frac = ((wei % base) * (10n ** BigInt(decimals))) / base
+  return whole.toString() + '.' + frac.toString().padStart(decimals,'0')
 }
 function showToast(msg:string, type='ok'){
   toast.value={msg,type}
@@ -607,6 +709,14 @@ async function copyKey(){
   setTimeout(()=>{ copied.value=false },2000)
 }
 
+async function copyAddress(){
+  try {
+    await navigator.clipboard.writeText(walletAddress.value)
+    copiedAddr.value = true
+    setTimeout(()=>{ copiedAddr.value=false },2000)
+  } catch { showToast('Could not copy address','err') }
+}
+
 async function fetchBalance(){
   if(!walletAddress.value) return
   try {
@@ -616,8 +726,16 @@ async function fetchBalance(){
       body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_getBalance',params:[walletAddress.value,'latest']})
     })
     const d = await r.json()
-    if(d.result) balance.value = (Number(BigInt(d.result))/1e18).toFixed(4)
-  } catch { balance.value='?' }
+    if(d.error) throw new Error(d.error.message || 'balance RPC error')
+    const wei = BigInt(d.result ?? '0x0')
+    balanceWei.value = wei
+    balance.value = weiToGEN(wei)
+    balanceKnown.value = true
+  } catch {
+    balanceWei.value = 0n
+    balance.value = '—'
+    balanceKnown.value = false
+  }
 }
 
 function refreshBalance(){ fetchBalance(); showToast('Balance refreshed') }
@@ -625,13 +743,17 @@ function refreshBalance(){ fetchBalance(); showToast('Balance refreshed') }
 // ── Contract reads ─────────────────────────────────
 async function loadBounties(){
   loading.value=true
+  bountiesError.value=''
   try {
+    if(!CONTRACT) throw new Error('No contract address configured (VITE_CONTRACT_ADDRESS).')
     const r = await (client as any).readContract({
       address:CONTRACT, functionName:'get_all_bounties', args:[]
     })
     bounties.value = Array.isArray(r) ? [...r].reverse() : []
   } catch(e:any){
-    showToast('Could not load bounties: '+(e?.message??String(e)),'err')
+    // Keep the inline error concise; the raw RPC message can be very long.
+    bountiesError.value = (e?.message ?? String(e)).split('\n')[0].slice(0,140)
+    showToast('Could not load bounties','err')
   } finally { loading.value=false }
 }
 
@@ -727,14 +849,21 @@ if (!rewardNum || rewardNum <= 0) {
   posting.value = false
   return
 }
+// Guard before signing: on production networks reject rewards over balance.
+if (rewardExceedsBalance.value) {
+  postResult.value = { ok: false, err: rewardValidationMsg.value }
+  posting.value = false
+  return
+}
 const wei = BigInt(Math.round(rewardNum * 1e9)) * BigInt('1000000000')
 
-    // 1️⃣ send tx
+    // 1️⃣ send tx — reward is escrowed as the payable call value
     const txHash = await (client as any).writeContract({
       account: account.value,
       address: CONTRACT,
       functionName: 'post_bounty',
-      args: [form.value.title, form.value.description, form.value.criteria, wei],
+      args: [form.value.title, form.value.description, form.value.criteria],
+      value: wei,
     })
 
     // 2️⃣ wait for transaction confirmation
@@ -817,7 +946,11 @@ async function doSubmit(bountyId: number) {
 // bountyId is optional _ passed when called from My Activity so we can reload
 async function doEvaluate(subId: number, bountyId?: number) {
   if(!requireWallet()) return
+  // Re-entrancy guard: only one evaluation transaction may be in flight at a
+  // time, so a submission can't be evaluated twice (covers rapid double-clicks).
+  if(evaluatingId.value !== null) return
   evaluatingId.value = subId // Track the specific ID
+  const startedAt = Date.now()
   showToast('AI evaluation started - validators are reading the content…')
 
   try {
@@ -829,27 +962,43 @@ async function doEvaluate(subId: number, bountyId?: number) {
     })
 
     const receipt = await (client as any).waitForTransactionReceipt({ hash: txHash })
+    const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000))
 
-    const ok = receipt?.result_name === 'MAJORITY_AGREE' || receipt?.status === 'success' || receipt?.status === 5
-    if(ok){
-      // Reload submissions to get updated status/score/feedback
-      const reloadId = bountyId ?? selectedBounty.value?.id
-      if(reloadId != null) await loadSubmissionsFor(reloadId)
-      await loadMine()
+    // Inspect the actual leader execution + consensus, not just result_name.
+    const consensusReached = receipt?.result_name === 'MAJORITY_AGREE' || receipt?.status === 'success' || receipt?.status === 5
+    const { leaderOk, agreeCount, validatorCount } = readLeaderOutcome(receipt)
 
-      // Find the updated submission to show result
-      const updated = submissions.value.find(s => s.id === subId)
-        ?? myPostedBountySubmissions.value.find(i => i.sub.id === subId)?.sub
-      if(updated){
-        const resultMsg = updated.status === 'approved'
-          ? `✓ Approved! Score: ${updated.score}/100 _ reward sent to creator`
-          : `✗ Rejected. Score: ${updated.score}/100 _ ${updated.feedback}`
-        showToast(resultMsg, updated.status === 'approved' ? 'ok' : 'err')
-      } else {
-        showToast('Evaluation complete _ refresh to see result')
+    if(!consensusReached){
+      throw new Error('Validators did not reach consensus.')
+    }
+    // Critical: a reverted/errored evaluation is NOT a rejection. Surface it as
+    // an evaluation error instead of silently painting "Rejected 0/100".
+    if(!leaderOk){
+      evalInfo.value[subId] = { verdict: 'error', durationSec, agreeCount, validatorCount }
+      showToast('Evaluation could not complete on-chain — please try again.', 'err')
+      return
+    }
+
+    // Reload submissions to get updated status/score/feedback
+    const reloadId = bountyId ?? selectedBounty.value?.id
+    if(reloadId != null) await loadSubmissionsFor(reloadId)
+    await loadMine()
+
+    const updated = submissions.value.find(s => s.id === subId)
+      ?? myPostedBountySubmissions.value.find(i => i.sub.id === subId)?.sub
+
+    if(updated && (updated.status === 'approved' || updated.status === 'rejected')){
+      evalInfo.value[subId] = {
+        verdict: updated.status, score: updated.score, durationSec, agreeCount, validatorCount,
+        sourceUrl: updated.content_url,
       }
+      const resultMsg = updated.status === 'approved'
+        ? `✓ Approved (score ${updated.score}/100) — reward sent to creator`
+        : `Rejected (score ${updated.score}/100) — ${updated.feedback}`
+      showToast(resultMsg, updated.status === 'approved' ? 'ok' : 'err')
     } else {
-      throw new Error('Evaluation failed on-chain.')
+      // Consensus + leader OK but status unchanged: don't claim a verdict.
+      showToast('Evaluation finished — refresh to see the result.')
     }
 
   } catch(e:any) {
@@ -857,6 +1006,23 @@ async function doEvaluate(subId: number, bountyId?: number) {
   } finally {
     evaluatingId.value = null // Reset it
   }
+}
+
+// Extract whether the leader executed successfully and the validator agreement
+// from a GenLayer receipt, tolerant of shape differences across networks.
+function readLeaderOutcome(receipt:any){
+  const cd = receipt?.consensus_data ?? receipt?.data?.consensus_data ?? {}
+  const votes = cd?.votes ?? {}
+  const values = Object.values(votes) as string[]
+  const agreeCount = values.filter(v => v === 'agree').length
+  const validatorCount = values.length
+  const lrRaw = cd?.leader_receipt
+  const lr = Array.isArray(lrRaw) ? lrRaw[0] : lrRaw
+  const exec = lr?.execution_result
+  // If we can read the leader execution result, trust it; if the field is
+  // absent (finalized receipt), fall back to consensus success.
+  const leaderOk = exec == null ? true : exec === 'SUCCESS'
+  return { leaderOk, agreeCount, validatorCount }
 }
 
 // ----- Manual approve with custom reward -----
@@ -956,6 +1122,18 @@ async function doReject(subId: number, bountyId: number) {
   finally { manualAction.value = false }
 }
 
+// ── Startup ───────────────────────────────────────
+// Runs on first paint. Restores a previously connected wallet so a refresh
+// keeps you signed in, and always loads the public bounty list — Browse must
+// populate on a clean session / refresh without requiring a manual click.
+onMounted(async () => {
+  const saved = localStorage.getItem(PK_KEY)
+  if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
+    try { activateAccount(saved) } catch { localStorage.removeItem(PK_KEY) }
+  }
+  await loadBounties()
+})
+
 </script>
 
 <style>
@@ -993,6 +1171,27 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .btn-icon{background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px 6px;transition:color .15s}.btn-icon:hover{color:var(--tl)}
 .btn-disconnect{background:none;border:1px solid var(--b);color:var(--d);font-size:12px;cursor:pointer;padding:3px 8px;border-radius:20px;transition:color .15s,border-color .15s}.btn-disconnect:hover{color:#f87171;border-color:#f87171}
 .btn-connect-wallet{background:var(--tl);color:#0a0a0a;font-family:var(--fb);font-weight:600;font-size:13px;border:none;border-radius:20px;padding:7px 18px;cursor:pointer;transition:opacity .15s}.btn-connect-wallet:hover{opacity:.88}
+/* Wallet dropdown */
+.wallet-menu{position:relative}
+.wallet-trigger{display:flex;align-items:center;gap:8px;background:var(--sur2);border:1px solid var(--b);border-radius:20px;padding:5px 12px;cursor:pointer;transition:border-color .15s,background .15s;font-family:var(--fm)}
+.wallet-trigger:hover,.wallet-trigger.open{border-color:var(--teal)}
+.wt-dot{width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl);flex-shrink:0}
+.wt-addr{font-size:12px;color:var(--m)}
+.wt-bal{font-size:12px;color:var(--y);border-left:1px solid var(--b);padding-left:8px}
+.wt-caret{font-size:10px;color:var(--d);transition:transform .15s}
+.wallet-trigger.open .wt-caret{transform:rotate(180deg)}
+.wallet-backdrop{position:fixed;inset:0;z-index:190}
+.wallet-dropdown{position:absolute;right:0;top:calc(100% + 8px);z-index:200;width:280px;background:var(--sur);border:1px solid var(--teal);border-radius:var(--rl);padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.wd-section{padding:10px 12px;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--b)}
+.wd-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--d)}
+.wd-full{font-family:var(--fm);font-size:11px;color:var(--m);word-break:break-all}
+.wd-balrow{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b)}
+.wd-balrow .wd-label{display:block;margin-bottom:2px}
+.wd-bal{font-family:var(--fm);font-size:15px;font-weight:500;color:var(--y)}
+.wd-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--m);font-family:var(--fb);font-size:13px;padding:9px 12px;border-radius:var(--r);cursor:pointer;transition:background .15s,color .15s}
+.wd-item:hover{background:var(--sur2);color:var(--w)}
+.wd-item span{width:16px;text-align:center;color:var(--d)}
+.wd-danger{color:#f87171}.wd-danger:hover{background:rgba(220,60,60,.1);color:#f87171}.wd-danger span{color:#f87171}
 
 /* Modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(5,15,14,.8);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -1085,6 +1284,7 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .sub-url{font-family:var(--fm);font-size:12px;color:var(--m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
 .sub-meta{font-size:12px;color:var(--d);display:flex;gap:16px;margin-bottom:4px}
 .sub-feedback{font-size:13px;color:var(--m);font-style:italic}
+.eval-evidence{font-family:var(--fm);font-size:11px;color:var(--tl);margin-top:6px;letter-spacing:.02em}
 
 /* Form */
 .form-card{max-width:680px;background:var(--sur);border:1px solid var(--b);border-radius:var(--rl);padding:32px}
@@ -1094,6 +1294,9 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .mono{font-family:var(--fm);font-size:13px}
 .field-label{display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--m)}
 .field-hint{font-size:12px;color:var(--d);margin-top:4px;line-height:1.5}
+.field-note{font-size:12px;color:var(--m);margin-top:6px;line-height:1.5}
+.field-error{font-size:12px;color:#f87171;margin-top:6px;line-height:1.5}
+.input-error{border-color:rgba(220,60,60,.6) !important}
 .form-foot{margin-top:28px}
 .result-box{margin-top:16px;padding:12px 16px;border-radius:var(--r);font-size:13px;font-family:var(--fm)}
 .r-ok{background:var(--tp);border:1px solid var(--teal);color:var(--tl)}
@@ -1132,6 +1335,8 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 /* States */
 .state-row{padding:60px 0;text-align:center;color:var(--d)}
 .empty-state{padding:80px 0;text-align:center;color:var(--d);display:flex;flex-direction:column;align-items:center;gap:12px}
+.error-state .ei{color:#f87171}
+.es-detail{font-family:var(--fm);font-size:12px;color:var(--d);max-width:520px;word-break:break-word}
 .ei{font-size:32px}
 .pulse{animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
