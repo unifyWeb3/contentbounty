@@ -20,12 +20,41 @@
           </button>
         </nav>
         <div class="wallet-area">
-          <template v-if="connected">
-            <span class="wallet-pill" :title="walletAddress">{{ shortAddr(walletAddress) }}</span>
-            <span class="bal-pill" :title="'On-chain balance: ' + balance + ' GEN'">{{ balance }} GEN</span>
-            <button class="btn-icon" @click="refreshBalance" title="Refresh">↻</button>
-            <button class="btn-disconnect" @click="disconnect">×</button>
-          </template>
+          <div v-if="connected" class="wallet-menu">
+            <button class="wallet-trigger" :class="{ open: walletMenuOpen }"
+              @click="walletMenuOpen = !walletMenuOpen" :title="walletAddress">
+              <span class="wt-dot"></span>
+              <span class="wt-addr">{{ shortAddr(walletAddress) }}</span>
+              <span class="wt-bal">{{ balance }} GEN</span>
+              <span class="wt-caret">▾</span>
+            </button>
+            <div v-if="walletMenuOpen" class="wallet-backdrop" @click="walletMenuOpen = false"></div>
+            <Transition name="fade">
+              <div v-if="walletMenuOpen" class="wallet-dropdown">
+                <div class="wd-section">
+                  <span class="wd-label">Connected wallet</span>
+                  <span class="wd-full">{{ walletAddress }}</span>
+                </div>
+                <div class="wd-balrow">
+                  <div>
+                    <span class="wd-label">Balance</span>
+                    <span class="wd-bal">{{ balance }} GEN</span>
+                  </div>
+                  <button class="btn-icon" @click="refreshBalance" title="Refresh balance">↻</button>
+                </div>
+                <button class="wd-item" @click="copyAddress">
+                  <span>⧉</span> {{ copiedAddr ? 'Copied!' : 'Copy address' }}
+                </button>
+                <a class="wd-item" :href="explorerUrl" target="_blank" rel="noopener noreferrer"
+                  @click="walletMenuOpen = false">
+                  <span>↗</span> View on explorer
+                </a>
+                <button class="wd-item wd-danger" @click="disconnect(); walletMenuOpen = false">
+                  <span>⏻</span> Disconnect
+                </button>
+              </div>
+            </Transition>
+          </div>
           <button v-else class="btn-connect-wallet" @click="showWalletModal = true">
             Connect Wallet
           </button>
@@ -492,6 +521,14 @@ const importKeyInput = ref('')
 const exportKey      = ref('')
 const walletError    = ref('')
 const copied         = ref(false)
+const walletMenuOpen = ref(false)
+const copiedAddr     = ref(false)
+
+// Block-explorer address link for the active chain (studio -> genlayer-explorer).
+const explorerUrl = computed(() => {
+  const base = ((studionet as any).blockExplorers?.default?.url || '').replace(/\/+$/, '')
+  return base && walletAddress.value ? `${base}/address/${walletAddress.value}` : '#'
+})
 
 const isAdmin = computed(() =>
   connected.value && ADMIN_ADDR && walletAddress.value.toLowerCase() === ADMIN_ADDR
@@ -651,6 +688,14 @@ async function copyKey(){
   await navigator.clipboard.writeText(exportKey.value)
   copied.value = true
   setTimeout(()=>{ copied.value=false },2000)
+}
+
+async function copyAddress(){
+  try {
+    await navigator.clipboard.writeText(walletAddress.value)
+    copiedAddr.value = true
+    setTimeout(()=>{ copiedAddr.value=false },2000)
+  } catch { showToast('Could not copy address','err') }
 }
 
 async function fetchBalance(){
@@ -1065,6 +1110,27 @@ a{color:var(--tl);text-decoration:none}a:hover{color:var(--y)}
 .btn-icon{background:none;border:none;color:var(--d);cursor:pointer;font-size:14px;padding:2px 6px;transition:color .15s}.btn-icon:hover{color:var(--tl)}
 .btn-disconnect{background:none;border:1px solid var(--b);color:var(--d);font-size:12px;cursor:pointer;padding:3px 8px;border-radius:20px;transition:color .15s,border-color .15s}.btn-disconnect:hover{color:#f87171;border-color:#f87171}
 .btn-connect-wallet{background:var(--tl);color:#0a0a0a;font-family:var(--fb);font-weight:600;font-size:13px;border:none;border-radius:20px;padding:7px 18px;cursor:pointer;transition:opacity .15s}.btn-connect-wallet:hover{opacity:.88}
+/* Wallet dropdown */
+.wallet-menu{position:relative}
+.wallet-trigger{display:flex;align-items:center;gap:8px;background:var(--sur2);border:1px solid var(--b);border-radius:20px;padding:5px 12px;cursor:pointer;transition:border-color .15s,background .15s;font-family:var(--fm)}
+.wallet-trigger:hover,.wallet-trigger.open{border-color:var(--teal)}
+.wt-dot{width:7px;height:7px;border-radius:50%;background:var(--tl);box-shadow:0 0 6px var(--tl);flex-shrink:0}
+.wt-addr{font-size:12px;color:var(--m)}
+.wt-bal{font-size:12px;color:var(--y);border-left:1px solid var(--b);padding-left:8px}
+.wt-caret{font-size:10px;color:var(--d);transition:transform .15s}
+.wallet-trigger.open .wt-caret{transform:rotate(180deg)}
+.wallet-backdrop{position:fixed;inset:0;z-index:190}
+.wallet-dropdown{position:absolute;right:0;top:calc(100% + 8px);z-index:200;width:280px;background:var(--sur);border:1px solid var(--teal);border-radius:var(--rl);padding:8px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.wd-section{padding:10px 12px;display:flex;flex-direction:column;gap:4px;border-bottom:1px solid var(--b)}
+.wd-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--d)}
+.wd-full{font-family:var(--fm);font-size:11px;color:var(--m);word-break:break-all}
+.wd-balrow{padding:10px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b)}
+.wd-balrow .wd-label{display:block;margin-bottom:2px}
+.wd-bal{font-family:var(--fm);font-size:15px;font-weight:500;color:var(--y)}
+.wd-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--m);font-family:var(--fb);font-size:13px;padding:9px 12px;border-radius:var(--r);cursor:pointer;transition:background .15s,color .15s}
+.wd-item:hover{background:var(--sur2);color:var(--w)}
+.wd-item span{width:16px;text-align:center;color:var(--d)}
+.wd-danger{color:#f87171}.wd-danger:hover{background:rgba(220,60,60,.1);color:#f87171}.wd-danger span{color:#f87171}
 
 /* Modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(5,15,14,.8);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px}
