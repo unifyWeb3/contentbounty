@@ -1016,6 +1016,18 @@ async function doReject(subId: number, bountyId: number) {
   finally { manualAction.value = false }
 }
 
+// ── Startup ───────────────────────────────────────
+// Runs on first paint. Restores a previously connected wallet so a refresh
+// keeps you signed in, and always loads the public bounty list — Browse must
+// populate on a clean session / refresh without requiring a manual click.
+onMounted(async () => {
+  const saved = localStorage.getItem(PK_KEY)
+  if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
+    try { activateAccount(saved) } catch { localStorage.removeItem(PK_KEY) }
+  }
+  await loadBounties()
+})
+
 </script>
 
 <style>
