@@ -489,3 +489,40 @@ def test_page_reads_are_bounded(direct_vm, direct_deploy):
     with pytest.raises(AssertionError, match="Invalid page size"):
         contract.get_bounties_page(0, 51)
     assert len(contract.get_bounties_page(0, 50)) == 1
+
+
+def test_creator_activity_is_indexed_and_paginated(
+    direct_vm, direct_deploy, direct_alice, direct_bob
+):
+    direct_vm.mock_web(r"evidence\.example/", {"status": 200, "body": BODY})
+    contract = direct_deploy(CONTRACT)
+
+    direct_vm.sender = direct_alice
+    first_bounty = post(contract, direct_vm)
+    first_submission = contract.submit_content(first_bounty, URI)
+    second_bounty = post(contract, direct_vm)
+    second_submission = contract.submit_content(
+        second_bounty,
+        "https://evidence.example/alice-second",
+    )
+
+    direct_vm.sender = direct_bob
+    third_bounty = post(contract, direct_vm)
+    bob_submission = contract.submit_content(
+        third_bounty,
+        "https://evidence.example/bob",
+    )
+
+    alice_address = contract.get_submission(first_submission)["creator"]
+    bob_address = contract.get_submission(bob_submission)["creator"]
+    alice_first_page = contract.get_creator_submissions_page(alice_address, 0, 1)
+    alice_second_page = contract.get_creator_submissions_page(alice_address, 1, 1)
+    assert [item["id"] for item in alice_first_page] == [first_submission]
+    assert [item["id"] for item in alice_second_page] == [second_submission]
+    assert contract.get_creator_submissions_page(alice_address, 2, 50) == []
+    assert [
+        item["id"] for item in contract.get_creator_submissions_page(bob_address, 0, 50)
+    ] == [bob_submission]
+
+    with pytest.raises(AssertionError, match="Invalid page size"):
+        contract.get_creator_submissions_page(alice_address, 0, 51)

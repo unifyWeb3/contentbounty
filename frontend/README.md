@@ -16,7 +16,9 @@ Contract.
   accepted evaluation as a confirmed payout.
 - Requires `MAJORITY_AGREE` and `FINISHED_WITH_RETURN` before displaying an
   accepted or successfully finalized transaction.
-- Reads v2 bounties and submissions through bounded paginated views.
+- Reads v2 bounties, bounty submissions, and wallet activity through bounded
+  paginated views; activity uses the contract's creator index rather than a
+  whole-market scan.
 
 ## Run
 

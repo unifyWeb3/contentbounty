@@ -513,3 +513,49 @@ GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-
   v2.1 contract, transaction funding, and the network's configured validator
   models. It was not run during the announced Studionet outage and cannot be
   marked complete without transaction/explorer evidence.
+
+## 2026-08-07 — creator-indexed activity
+
+### Decisions and assumptions
+
+- Added one append-only creator index entry per stored submission plus a creator
+  count. This is linear with the already-bounded submission record growth and
+  does not duplicate evidence or rubric payloads.
+- Added `get_creator_submissions_page(creator, offset, limit)` with the same
+  maximum page size of 50 as the existing market views. Unknown creators and
+  offsets beyond the creator count return an empty page.
+- Replaced the frontend's `Promise.all` whole-market scan with sequential pages
+  from the creator-indexed view. The local address filter remains a defensive UI
+  check, not the data-discovery mechanism.
+- The initial Direct test passed fixture byte addresses directly to the Python
+  method, which bypassed ABI address conversion and did not match stored address
+  strings. The test was corrected to use the contract-returned creator address,
+  matching the public ABI/SDK call path.
+
+### Commands and results
+
+```text
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -q
+=> first full run: 22 passed, 1 failed because the Direct-only raw-byte address
+bypassed ABI conversion in the new view test
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct/test_content_bounty.py::test_creator_activity_is_indexed_and_paginated -v
+=> PASS; 1 passed in 0.39s
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -q
+=> PASS; 23 passed in 10.14s
+
+GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 .venv/bin/genvm-lint check contracts/content_bounty.py --json
+=> PASS; lint 3/3 and semantic schema validation (10 methods, 5 view, 5 write)
+
+cd frontend && npm test
+=> PASS; 2 files, 33 tests
+
+cd frontend && npm run build
+=> PASS; vue-tsc and Vite production build, 460 modules transformed
+```
+
+### Remaining blockers
+
+- The creator view has Direct Mode and semantic-schema coverage but no live RPC
+  pagination evidence until v2.1 is deployed.

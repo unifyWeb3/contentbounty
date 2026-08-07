@@ -362,8 +362,17 @@ async function openActivity() {
   if (!walletAddress.value) return
   actionBusy.value = 'activity'
   try {
-    const pages = await Promise.all(bounties.value.map((bounty) => readSubmissionsForBounty(bounty.id)))
-    activitySubmissions.value = pages.flat()
+    const result: Submission[] = []
+    for (let offset = 0; ; offset += 50) {
+      const page = await readClient.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: 'get_creator_submissions_page',
+        args: [walletAddress.value, offset, 50],
+      }) as Submission[]
+      result.push(...page)
+      if (page.length < 50) break
+    }
+    activitySubmissions.value = result
   } catch (error: any) {
     showNotice(`Could not load wallet activity: ${error?.message ?? String(error)}`, 'error')
   } finally {
@@ -771,7 +780,7 @@ onMounted(async () => {
       <section v-else-if="activeView === 'activity'" class="workspace">
         <div class="section-heading"><div><p class="eyebrow">Wallet-scoped view</p><h2>My activity</h2></div><button v-if="!connected" class="button primary" @click="connectWallet">Connect wallet</button></div>
         <div v-if="!connected" class="empty-card"><h3>No account connected</h3><p>Connect an injected wallet to filter public submissions by creator. No secret keys enter this application.</p></div>
-        <div v-else-if="actionBusy === 'activity'" class="empty-card"><h3>Loading paginated activity…</h3><p>Reading submissions across {{ bounties.length }} known bounties.</p></div>
+        <div v-else-if="actionBusy === 'activity'" class="empty-card"><h3>Loading paginated activity…</h3><p>Reading the bounded creator index without scanning the marketplace.</p></div>
         <div v-else-if="!mySubmissions.length" class="empty-card"><h3>No submissions for {{ shortAddress(walletAddress) }}</h3><p>This address has no submissions in the currently loaded v2 bounties.</p></div>
         <div v-else class="activity-grid">
           <article v-for="submission in mySubmissions" :key="submission.id" class="submission-card">

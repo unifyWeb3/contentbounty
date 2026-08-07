@@ -100,8 +100,10 @@ class ContentBounty(gl.Contract):
     bounties: DynArray[Bounty]
     submissions: DynArray[Submission]
     creator_submission_ids: TreeMap[str, u256]
+    creator_submission_counts: TreeMap[str, u256]
     evidence_submission_ids: TreeMap[str, u256]
     submission_ids_by_bounty: TreeMap[str, u256]
+    submission_ids_by_creator: TreeMap[str, u256]
 
     def __init__(self) -> None:
         self.bounty_count = u256(0)
@@ -159,6 +161,9 @@ class ContentBounty(gl.Contract):
 
     def _evidence_key(self, bounty_id: u256, digest: str) -> str:
         return str(int(bounty_id)) + ":" + digest
+
+    def _creator_index_key(self, creator: Address, index: int) -> str:
+        return str(creator) + ":" + str(index)
 
     def _bounty_submission_key(self, bounty_id: u256, index: int) -> str:
         return str(int(bounty_id)) + ":" + str(index)
@@ -556,6 +561,12 @@ approval field; deterministic contract code derives the decision."""
         self.submission_ids_by_bounty[self._bounty_submission_key(bounty_id, index)] = submission_id
         self.creator_submission_ids[creator_key] = submission_id
         self.evidence_submission_ids[evidence_key] = submission_id
+        creator_count_value = self.creator_submission_counts.get(str(gl.message.sender_address))
+        creator_count = int(creator_count_value) if creator_count_value is not None else 0
+        self.submission_ids_by_creator[
+            self._creator_index_key(gl.message.sender_address, creator_count)
+        ] = submission_id
+        self.creator_submission_counts[str(gl.message.sender_address)] = u256(creator_count + 1)
         self.bounties[int(bounty_id)].submission_count = u256(index + 1)
         self.bounties[int(bounty_id)].status = BOUNTY_LOCKED
         return submission_id
@@ -727,5 +738,21 @@ approval field; deterministic contract code derives the decision."""
         result = []
         for index in range(start, end):
             submission_id = self.submission_ids_by_bounty[self._bounty_submission_key(bounty_id, index)]
+            result.append(self.get_submission(submission_id))
+        return result
+
+    @gl.public.view
+    def get_creator_submissions_page(self, creator: Address, offset: u256, limit: u256) -> list:
+        start = int(offset)
+        page_size = int(limit)
+        assert 0 < page_size <= 50, "Invalid page size"
+        count_value = self.creator_submission_counts.get(str(creator))
+        creator_count = int(count_value) if count_value is not None else 0
+        end = min(start + page_size, creator_count)
+        result = []
+        for index in range(start, end):
+            submission_id = self.submission_ids_by_creator[
+                self._creator_index_key(creator, index)
+            ]
             result.append(self.get_submission(submission_id))
         return result

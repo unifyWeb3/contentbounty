@@ -161,4 +161,6 @@ execution plus recipient balance delta.
 
 Titles, descriptions, rubric JSON, criterion count/length, evidence URI, rendered
 evidence, feedback, submissions per bounty, and evaluation attempts are bounded.
-Read methods are page-based rather than full-state scans.
+Read methods are page-based rather than full-state scans. Every submission adds
+one entry to its creator's append-only index, and
+`get_creator_submissions_page(creator, offset, limit)` caps pages at 50.
