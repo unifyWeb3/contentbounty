@@ -1,9 +1,10 @@
 {
   "scripts": {
     "lint:contract": ".venv/bin/genvm-lint lint contracts/content_bounty.py",
-    "test:contract": ".venv/bin/pytest tests/direct -v"
+    "test:contract": ".venv/bin/pytest tests/direct -v",
+    "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {
-    "genlayer-js": "^0.28.4"
+    "genlayer-js": "^1.1.8"
   }
 }

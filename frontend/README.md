@@ -1,20 +1,40 @@
-# ContentBounty — frontend
+# ContentBounty v2 frontend
 
-Vue 3 + Vite + TypeScript single-page app for ContentBounty, talking to the
-GenLayer Intelligent Contract via `genlayer-js`.
+Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
+Contract.
 
-See the [root README](../README.md) for the full project overview, architecture,
-and the evaluation/consensus design.
+## Safety model
 
-## Quick start
+- Uses an injected external wallet only.
+- Never generates, imports, displays, or persists a private key.
+- Parses GEN amounts as exact 18-decimal integers.
+- Persists transaction identifiers and observed lifecycle states so evidence
+  survives reload.
+- Separates `SUBMITTED`, `ACCEPTED`, and `FINALIZED`; it does not treat an
+  accepted evaluation as a confirmed payout.
+- Reads v2 bounties and submissions through bounded paginated views.
+
+## Run
 
 ```bash
 npm install
-cp .env.example .env      # sets VITE_CONTRACT_ADDRESS
-npm run dev               # http://localhost:5173
+cp .env.example .env
+npm run dev
 ```
 
-| Variable | Purpose |
-|---|---|
-| `VITE_CONTRACT_ADDRESS` | Deployed ContentBounty contract address (required) |
-| `VITE_ADMIN_ADDRESS` | Optional address that sees the read-only Admin dashboard |
+Production verification:
+
+```bash
+npm run build
+```
+
+## Environment
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `VITE_CONTRACT_ADDRESS` | yes | Deployed ContentBounty v2 address |
+| `VITE_GENLAYER_RPC_URL` | no | Override the Studionet RPC URL |
+| `VITE_GENLAYER_NETWORK_LABEL` | no | Display label for the configured network |
+| `VITE_GENLAYER_EXPLORER_URL` | no | Override explorer links |
+
+The historical v0.2 address is incompatible with this frontend.

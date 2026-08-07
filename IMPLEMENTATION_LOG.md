@@ -121,7 +121,7 @@ git diff --check
 - [x] `genvm-lint lint` and full `genvm-lint check` pass.
 - [x] 16 adversarial Direct Mode tests pass.
 - [x] Contract milestone committed as `015ba57`.
-- [ ] Begin frontend rebuild as the next stage.
+- [x] Frontend rebuild began only after the contract gate passed.
 
 ## 2026-08-07 — final contract gate rerun
 
@@ -141,3 +141,127 @@ git diff --quiet -- AUDIT_REPORT.md
 git commit -m "feat(contract): rebuild ContentBounty v2 adjudication"
 => PASS; milestone commit 015ba57
 ```
+
+## 2026-08-07 — v2 frontend and client integration
+
+### Decisions and assumptions
+
+- Replaced the v0.2 Vue application instead of adapting its old storage and
+  method assumptions. The v2 frontend calls only `post_bounty`,
+  `submit_content`, `evaluate_submission`, `cancel_bounty`, `expire_bounty`,
+  `get_bounties_page`, and `get_submissions_page`.
+- Use an injected external signer. The application no longer generates,
+  imports, displays, or persists raw private keys. Wallet disconnect is local;
+  the extension remains responsible for account authorization and custody.
+- Centralize Studionet/RPC/explorer/contract configuration in
+  `frontend/src/lib/genlayer.ts`. A custom RPC URL can be supplied without
+  changing application code.
+- Use `genlayer-js` `1.1.8`, matching the current official boilerplate
+  reference inspected before implementation. The address-backed SDK client
+  routes signing methods to the injected provider, while GenLayer RPC reads use
+  the configured network endpoint.
+- Parse reward input directly to `bigint` with at most 18 fractional digits.
+  Floating-point GEN-to-wei conversion is forbidden.
+- Require the user to commit the exact normalized-rendered-text SHA-256 with the
+  evidence HTTPS URI. The frontend does not invent a digest or silently fetch a
+  CORS-dependent browser rendering that may differ from validator rendering.
+- Persist only transaction identifiers, action metadata, timestamps, and
+  observed lifecycle state in local storage. This lets evidence survive reload
+  without persisting a wallet secret.
+- Treat `SUBMITTED`, `ACCEPTED`, and `FINALIZED` as different states. An approved
+  accepted evaluation is not described as paid. Even after finalization, the UI
+  tells the user to verify recipient balance before claiming payout
+  confirmation because contract state proves the transfer was emitted, not the
+  external balance delta.
+- Remove manual approval/rejection and pseudo-admin flows. Evaluation remains
+  permissionless and settlement remains contract-controlled.
+- Update the deployment helper to import the root SDK package, read the
+  deployer key from `GENLAYER_DEPLOYER_PRIVATE_KEY` rather than command-line
+  history, and wait explicitly for `FINALIZED`.
+- Rewrite the README files to describe v2. The historical v0.2 Studionet address
+  is no longer presented as a current compatible deployment.
+
+### GenLayer and frontend versions used
+
+- `genlayer-js`: `1.1.8` in both root and frontend lockfiles.
+- Resolved `viem`: `2.55.11` in the frontend lockfile after compatible advisory
+  updates.
+- Vue: `3.5.31` resolved.
+- TypeScript: `5.9.3` resolved.
+- Vite: `8.2.1` resolved.
+- Contract toolchain remains `genlayer-py 0.18.0`, `genlayer-test 0.29.2`,
+  `genvm-linter 0.10.0`, and official GenVM `v0.2.16` at
+  `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`.
+
+### Commands and results
+
+```text
+npm install genlayer-js@^1.1.8 --ignore-scripts  # frontend
+=> PASS; installed official genlayer-js 1.1.8 and updated lockfile
+
+npm audit --omit=dev --json  # before compatible updates
+=> 5 transitive production advisories: 1 moderate, 4 high, 0 critical
+=> affected old viem/ws, brace-expansion, postcss, and js-yaml resolutions
+
+npm audit fix
+npm install --ignore-scripts
+=> PASS; compatible transitive versions resolved to viem 2.55.11,
+ws 8.21.0, brace-expansion 1.1.18, postcss 8.5.26, js-yaml 4.3.1
+=> a final npm audit request returned HTTP 400 because npm is retiring the
+quick-audit endpoint and rejected the generated tree; `npm ls --all` passes and
+the installed versions are beyond every advisory range reported above
+
+npm run build:frontend
+=> PASS; vue-tsc project build and Vite 8.2.1 production bundle
+=> largest application chunk 465.87 kB, below Vite's 500 kB warning threshold
+
+node --check deploy.mjs
+=> PASS
+
+npm run lint:contract
+=> PASS; 3 checks
+
+npm run test:contract -- --quiet
+=> EXPECTED ENVIRONMENT FAILURE; Direct Mode attempted to download the official
+GenVM v0.2.16 runner archive and sandbox DNS was unavailable. No contract test
+assertion executed successfully in this unconfigured run.
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std npm run test:contract -- --quiet
+=> PASS; 16 passed in 1.40s using the previously verified official GenVM
+v0.2.16 source at commit 387e1a66e920cb2dfadcdce40ab2d28da02efd1e
+
+git diff --check
+=> PASS
+
+git diff --quiet -- AUDIT_REPORT.md
+=> PASS; AUDIT_REPORT.md remains unmodified
+```
+
+### Frontend milestone status
+
+- [x] External injected signer; no application-managed private keys.
+- [x] Exact decimal-to-wei parsing.
+- [x] v2 rubric, deadlines, evidence digest, retry, expiry, and pagination UI.
+- [x] Accepted/finalized transaction evidence survives reload.
+- [x] Manual settlement and pseudo-admin controls removed.
+- [x] Network configuration centralized and SDK upgraded to `1.1.8`.
+- [x] TypeScript and production build pass.
+- [ ] Run a live injected-wallet smoke test after a v2 contract is deployed.
+- [ ] Prove a finalized payout with a recipient balance delta on the selected
+  network.
+
+### Remaining blockers
+
+- No v2 contract address or deployment transaction exists yet. Deployment needs
+  an explicitly supplied funded deployer key and a reachable selected network.
+- A live browser signing/evaluation/finality smoke test depends on that v2
+  deployment.
+- Studio/localnet integration tests and an automated recipient balance-delta
+  assertion remain separate deployment-stage work.
+
+### Deployments
+
+| Network | Contract address | Deployment transaction | Source commit | Status |
+|---|---|---|---|---|
+| Studionet (historical v0.2) | `0xFf546d6B1CD45d2859a705a7FA181807670B9015` | Not verified in this session | `a09fe6a` lineage | Historical only; incompatible with v2 |
+| v2 | Not deployed | Not deployed | Frontend milestone pending commit | Blocked on deployer credentials/network execution |
