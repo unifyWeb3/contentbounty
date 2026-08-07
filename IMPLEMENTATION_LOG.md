@@ -661,3 +661,59 @@ The offline implementation is ready for another independent code review. It is
 not resubmission-ready: the live deployment, real-model/adversarial consensus,
 accepted-versus-finalized explorer proof, and finalized recipient balance delta
 remain externally blocked and unproven.
+
+## 2026-08-07 — post-maintenance live preflight
+
+### Decisions and assumptions
+
+- Resumed live-proof preflight after the user reported that GenLayer service was
+  available again. Only read-only endpoint checks were made; no deployment,
+  transaction, balance mutation, or credential output occurred.
+- Checked required variable presence without printing values. There is no root
+  `.env`, and none of the six required `LIVE_*` inputs are exported in this
+  process. `frontend/.env` contains only the public `VITE_CONTRACT_ADDRESS`
+  setting and is not a source of deployer credentials.
+- A GET response of HTTP 405 was treated only as host reachability. A read-only
+  `eth_chainId` JSON-RPC call was then used to verify that Studionet and Bradbury
+  were serving RPC requests. Asimov still failed DNS resolution from this
+  environment.
+
+### Commands and results
+
+```text
+curl --max-time 10 -sS -o /dev/null -w 'studionet_http=%{http_code}' https://studio.genlayer.com/api
+=> PASS; HTTP 405 (reachable endpoint, method not allowed)
+
+curl --max-time 10 -sS -o /dev/null -w 'bradbury_http=%{http_code}' https://rpc-bradbury.genlayer.com
+=> PASS; HTTP 405 (reachable endpoint, method not allowed)
+
+curl --max-time 10 -sS -o /dev/null -w 'asimov_http=%{http_code}' https://rpc-asimov.genlayer.com
+=> EXTERNAL ENVIRONMENT FAILURE; DNS could not resolve rpc-asimov.genlayer.com
+
+curl --max-time 10 -sS -X POST -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+  https://studio.genlayer.com/api
+=> PASS at 2026-08-07T12:31:35+01:00; result 0xf22f (61999)
+
+curl --max-time 10 -sS -X POST -H 'content-type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
+  https://rpc-bradbury.genlayer.com
+=> PASS at 2026-08-07T12:31:35+01:00; result 0x107d (4221)
+```
+
+### Remaining external blockers
+
+- The runner still lacks `LIVE_DEPLOYER_PRIVATE_KEY`,
+  `LIVE_CREATOR_PRIVATE_KEY`, `LIVE_APPROVE_EVIDENCE_URI`,
+  `LIVE_REJECT_EVIDENCE_URI`, `LIVE_MUTABLE_EVIDENCE_URI`, and
+  `LIVE_MUTATION_WEBHOOK_URL`. The optional network/reward/output variables are
+  also unset, so the runner would default to Studionet if required inputs were
+  later supplied.
+- Network availability is no longer the Studionet blocker, but live deployment
+  and consensus proof cannot start without the funded distinct accounts and
+  evidence services. The project remains not resubmission-ready.
+
+### Deployments
+
+No deployment was made during this preflight. There are no new addresses or
+transaction hashes.
