@@ -11,19 +11,21 @@ test('requires an explicit network selector and proof mode', () => {
   assert.throws(() => selectLiveProofMode('testnetBradbury', ''), /LIVE_PROOF_MODE is required/)
 })
 
-test('persistent proof mode is limited to the real public testnets', () => {
-  for (const network of ['testnetAsimov', 'testnetBradbury']) {
-    assert.deepEqual(selectLiveProofMode(network, PERSISTENT_PROOF_MODE), {
-      network,
-      mode: PERSISTENT_PROOF_MODE,
-      persistent: true,
-      balancesSimulated: false,
-      persistentPayoutProofEligible: true,
-    })
-  }
+test('persistent proof mode is limited to Bradbury', () => {
+  assert.deepEqual(selectLiveProofMode('testnetBradbury', PERSISTENT_PROOF_MODE), {
+    network: 'testnetBradbury',
+    mode: PERSISTENT_PROOF_MODE,
+    persistent: true,
+    balancesSimulated: false,
+    persistentPayoutProofEligible: true,
+  })
   assert.throws(
     () => selectLiveProofMode('studionet', PERSISTENT_PROOF_MODE),
     /Studionet is available only as LIVE_PROOF_MODE=studionet-smoke/,
+  )
+  assert.throws(
+    () => selectLiveProofMode('testnetAsimov', PERSISTENT_PROOF_MODE),
+    /Unsupported live proof network/,
   )
 })
 

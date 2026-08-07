@@ -11,7 +11,7 @@ import {
   transactionResultNumberToName,
   transactionsStatusNumberToName,
 } from 'genlayer-js/types'
-import { selectGenLayerNetwork } from './scripts/genlayer-network.mjs'
+import { selectDeploymentMode, selectGenLayerNetwork } from './scripts/genlayer-network.mjs'
 
 function gitValue(args) {
   try {
@@ -57,7 +57,12 @@ function summarizeReceipt(receipt) {
 }
 
 async function main() {
-  const { name: networkSelector, chain } = selectGenLayerNetwork(process.env.GENLAYER_NETWORK)
+  const configuredNetwork = process.env.GENLAYER_NETWORK?.trim()
+  if (!configuredNetwork) {
+    throw new Error('GENLAYER_NETWORK is required. Use testnetBradbury for persistent deployment or studionet with GENLAYER_DEPLOY_MODE=studionet-smoke.')
+  }
+  const { name: networkSelector, chain } = selectGenLayerNetwork(configuredNetwork)
+  const deploymentMode = selectDeploymentMode(networkSelector, process.env.GENLAYER_DEPLOY_MODE)
   const privateKey = process.env.GENLAYER_DEPLOYER_PRIVATE_KEY
   if (!privateKey || !/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
     throw new Error('Set GENLAYER_DEPLOYER_PRIVATE_KEY to a 0x-prefixed 32-byte key.')
@@ -74,6 +79,9 @@ async function main() {
   const client = createClient({ chain })
 
   console.log('Network selector:', networkSelector)
+  console.log('Deployment mode:', deploymentMode.mode)
+  console.log('Persistent balances:', deploymentMode.persistent)
+  console.log('Balances simulated:', deploymentMode.balancesSimulated)
   console.log('Network name:', chain.name)
   console.log('Chain ID:', chain.id)
   console.log('RPC:', rpcUrl)

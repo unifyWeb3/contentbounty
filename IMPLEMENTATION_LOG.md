@@ -955,3 +955,113 @@ is not resubmission-ready.
 
 No deployment was made. There are no new network addresses or transaction
 hashes.
+
+## 2026-08-07 — Bradbury-only network and incremental proof remediation
+
+### Decisions and assumptions
+
+- `testnetBradbury` is the only active persistent production/hackathon target.
+  `studionet` remains available only as an explicitly labelled
+  `studionet-smoke` demo. `testnetAsimov` is no longer an active selector in
+  the frontend, deployment helper, live-proof mode, environment example, or
+  current documentation. Historical Asimov observations above are retained as
+  audit history only.
+- Bradbury and another network share chain ID `4221`, while an injected wallet
+  does not expose its RPC URL. Wallet preflight therefore does not claim a
+  cryptographic RPC-URL identity proof. It treats identical execution state as
+  equivalent only after comparing wallet and official Bradbury RPC block hashes
+  at a stable common block, selected as `min(walletHeight, referenceHeight) -
+  2`, with a maximum sampled-head lag of 3 blocks.
+- At that stable block, every Bradbury write also requires exact normalized
+  consensus bytecode equality and exact normalized official ABI-probe output
+  equality (`VERSION()`). Missing code, malformed responses, probe/decode
+  errors, divergent history, excessive lag, and reference-RPC failures block
+  both payable and nonpayable writes before `writeContract`.
+- The live runner creates a mode-0600 proof artifact before deployment and
+  atomically checkpoints deployment metadata, every lifecycle observation,
+  each completed scenario, and terminal failures. Failure messages redact
+  32-byte private-key-looking values; private keys are never stored.
+- `proofComplete` is true only for persistent Bradbury mode after successful
+  deployment finalization, clear rejection, mutation/fetch inconclusive
+  behavior, clear approval finalization, and an exact recipient balance delta
+  equal to the reward. Studionet smoke always records
+  `persistent=false`, `balancesSimulated=true`,
+  `persistentPayoutProofValid=false`, and `proofComplete=false`.
+
+### GenLayer and JavaScript versions used
+
+- `genlayer-js` 1.1.8; frontend lockfile resolves Vue 3.5.31, TypeScript
+  5.9.3, Vite 8.2.1, Vitest 3.2.7, and viem 2.55.11.
+- Contract toolchain remains `genlayer-py` 0.18.0, `genlayer-test` 0.29.2,
+  `genvm-linter` 0.10.0, and official GenVM v0.2.16 at commit
+  `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`.
+
+### Commands and exact results
+
+```text
+npm ci                         # root, escalated only for registry access
+=> PASS; 217 packages added in approximately 3 minutes
+
+cd frontend && npm ci          # sequential rerun after an overlapping local
+                               # install had left node_modules incomplete
+=> PASS; 306 packages added in approximately 5 minutes
+
+npm ci --prefix frontend       # exact requested command, rerun after repair
+=> PASS; 307 packages added and 0 vulnerabilities reported in approximately
+7 minutes
+
+GENVM_SOURCE_MODE=prebuilt \
+GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 \
+npm run check:contract
+=> PASS; full lint 3/3 and semantic schema validation, 10 methods (5 view / 5
+write), 0 constructor parameters
+
+npm run check:contract
+=> EXPECTED SANDBOX NETWORK BLOCKER; release-mode semantic validation could
+not download the SDK because registry/DNS was unavailable. The pinned local
+official GenVM prebuilt command above passed.
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std \
+npm run test:contract -- --quiet
+=> PASS; 29 Direct Mode tests
+
+npm run test:evidence
+=> PASS; 2 evidence-preparation tests
+
+npm run test:network
+=> PASS; network selector, deployment-mode, and live proof-mode tests
+
+npm run test:lifecycle
+=> PASS; synthetic lifecycle tests plus incremental proof-store tests
+
+cd frontend && npm test -- --run
+=> PASS; 4 files, 64 tests (transaction classifier, wallet/network guard,
+network selector, App write-guard static checks)
+
+npm run build:frontend
+=> PASS; vue-tsc and Vite production build, 461 modules transformed
+
+node --check deploy.mjs
+node --check tests/integration/live_consensus.mjs
+node --check scripts/live-proof-store.mjs
+node_modules/.bin/js-yaml .github/workflows/ci.yml
+=> PASS; JavaScript syntax and CI YAML parse
+
+git diff --check
+=> PASS
+```
+
+### Remaining blockers and deployments
+
+- Live consensus proof remains externally blocked by funded, distinct deployer
+  and creator accounts; stable approval evidence; adversarial rejection
+  evidence from a real configured model; a mutable evidence endpoint and
+  mutation webhook; explicit authorization to deploy/spend; and a selected
+  persistent Bradbury network.
+- No deployment, transaction hash, explorer-linked finality, or balance-delta
+  evidence exists. No private key or credential was used.
+
+| Network | Contract address | Deployment transaction | Status |
+|---|---|---|---|
+| testnetBradbury | Not deployed | Not deployed | Persistent proof blocked |
+| Studionet smoke | Not deployed in this session | Not deployed | Demo mode only |

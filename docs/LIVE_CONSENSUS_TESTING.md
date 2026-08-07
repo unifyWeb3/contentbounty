@@ -1,17 +1,16 @@
 # Live consensus verification
 
 This suite deploys the current contract source and exercises real leader plus
-validator consensus. Persistent settlement proof is restricted to the public
-testnets (`testnetBradbury` or `testnetAsimov`). Studionet is available only as
-an explicitly named smoke/demo mode: its balances and transfers are simulated
-and cannot satisfy the payout-proof gate. The suite is intentionally excluded
-from CI because it spends funds, calls external evidence services, and creates
-persistent network state.
+validator consensus. Persistent settlement proof is restricted to
+`testnetBradbury`. Studionet is available only as an explicitly named
+smoke/demo mode: its balances and transfers are simulated and cannot satisfy
+the payout-proof gate. No deployment or live proof exists yet. The suite is
+intentionally excluded from CI because it spends funds, calls external
+evidence services, and creates persistent network state.
 
 ## Required setup
 
-- a reachable selected network; persistent mode requires `testnetBradbury` or
-  `testnetAsimov`;
+- a reachable selected network; persistent mode requires `testnetBradbury`;
 - funded deployer and creator accounts;
 - stable UTF-8 raw-text approval and rejection evidence URLs;
 - a mutable raw-text URL plus an HTTPS webhook that changes or disables it after
@@ -41,11 +40,12 @@ The script requires an explicit `LIVE_GENLAYER_NETWORK` and
 records every observed lifecycle state with timestamps, and accepts a
 transaction that is already successfully `FINALIZED` when first observed. The
 proof distinguishes a successful finalization observation from separate
-`ACCEPTED` and `FINALIZED` observations. In persistent mode it records explorer
-links, the deployed address, source commit/digest, clear approval, clear
-rejection, mutation/fetch inconclusive behavior, and an exact finalized
-recipient balance delta in a mode-0600 JSON proof file (default:
-`/tmp/contentbounty-live-consensus-proof.json`). No private key is written.
+`ACCEPTED` and `FINALIZED` observations. It creates a mode-0600 JSON proof file
+before the first transaction and atomically checkpoints deployment metadata,
+every lifecycle observation, each completed scenario, and terminal failures
+(default: `/tmp/contentbounty-live-consensus-proof.json`). No private key is
+written. `proofComplete` is true only when every persistent settlement check
+passes.
 
 For a non-persistent Studionet smoke run, use:
 

@@ -110,11 +110,15 @@ key and stores no wallet secret. It persists only transaction identifiers and
 observed lifecycle states.
 
 Before every write it fail-closed verifies the injected provider's selected
-consensus address, the official consensus ABI identity probe, and—because
-Asimov and Bradbury share chain ID `4221`—the exact current head height and
-block hash against the selected official RPC. A wallet that cannot be
-automatically switched must be manually configured to the selected chain-4221
-RPC; ambiguous identity blocks both payable and nonpayable writes.
+consensus address, bytecode, and official consensus ABI identity probe.
+Bradbury shares chain ID `4221` with another network, and an injected wallet
+does not expose its RPC URL, so the app compares both providers at a stable
+common block. Identical history, bytecode, and probe output are treated as
+equivalent execution state; this is not a cryptographic proof of the wallet's
+RPC URL. A wallet that cannot be automatically switched must be manually
+configured to Bradbury's chain-4221 RPC; ambiguous identity blocks both
+payable and nonpayable writes. The guard permits at most 3 sampled head blocks
+of lag and compares a common block 2 confirmations behind both heads.
 
 The UI distinguishes:
 
@@ -182,38 +186,46 @@ npm run build
 
 Deployment uses the root `genlayer-js` dependency and reads the deployer key
 from the process environment rather than a command-line argument. The network
-selector accepts only `studionet`, `testnetAsimov`, or `testnetBradbury`; it
+selector accepts only `studionet` or `testnetBradbury`; it
 uses the selected official chain object's RPC, explorer, chain ID, and consensus
 contracts:
 
 ```bash
 npm install
 GENLAYER_NETWORK=testnetBradbury \
+GENLAYER_DEPLOY_MODE=persistent \
 GENLAYER_DEPLOYER_PRIVATE_KEY=0x... \
 node deploy.mjs
 ```
 
-The default selector is `studionet`. Unsupported values and any unsuccessful
-receipt return a nonzero exit code. Do not commit the key. After successful
-finalization, record the network, contract address, transaction hash, source
-commit, and source SHA-256 in `IMPLEMENTATION_LOG.md`.
+`GENLAYER_NETWORK` is required. A Studionet deployment is allowed only with
+`GENLAYER_DEPLOY_MODE=studionet-smoke` and is simulated, not persistent proof.
+Unsupported values and any unsuccessful receipt return a nonzero exit code. Do
+not commit the key. After successful finalization, record the network, contract
+address, transaction hash, source commit, and source SHA-256 in
+`IMPLEMENTATION_LOG.md`.
 
 ## Live consensus proof
 
 The opt-in integration runner deploys the current source, observes lifecycle
 receipts, exercises clear approval/rejection and mutable evidence failure, and
 verifies the finalized winner balance delta. Persistent proof mode accepts only
-`testnetBradbury` or `testnetAsimov`; Studionet requires the explicit
+`testnetBradbury`; Studionet requires the explicit
 `LIVE_PROOF_MODE=studionet-smoke` demo mode and is never valid settlement
-evidence. It is never run by CI and requires explicit authorization plus funded
-keys and external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
+evidence. The runner checkpoints a mode-0600 proof artifact before the first
+transaction and after each lifecycle observation and scenario. Its
+`proofComplete` flag is true only after deployment finality, clear rejection,
+mutation inconclusive behavior, clear approval finality, and an exact
+persistent recipient balance delta. No deployment or live proof exists yet.
+It is never run by CI and requires explicit authorization plus funded keys and
+external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
 
 ## Continuous integration
 
 GitHub Actions installs the commit-pinned Python dependencies, uses the official
 GenVM `v0.2.16` source at commit
 `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, and runs full semantic lint,
-29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 44 frontend
+29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 64 frontend
 tests, frontend typecheck/build, and diff checks.
 
 ## License

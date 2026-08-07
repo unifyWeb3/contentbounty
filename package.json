@@ -5,7 +5,7 @@
     "test:contract": ".venv/bin/pytest tests/direct -v",
     "test:evidence": ".venv/bin/pytest tests/unit/test_prepare_evidence.py -v",
     "test:network": "node --test tests/js/network_selection.test.mjs tests/js/live_proof_mode.test.mjs",
-    "test:lifecycle": "node --test tests/js/live_lifecycle.test.mjs",
+    "test:lifecycle": "node --test tests/js/live_lifecycle.test.mjs tests/js/live_proof_store.test.mjs",
     "test:live": "node tests/integration/live_consensus.mjs",
     "build:frontend": "npm --prefix frontend run build"
   },

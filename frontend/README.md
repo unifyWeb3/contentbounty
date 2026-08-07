@@ -3,6 +3,9 @@
 Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
 Contract.
 
+No v2 deployment or live consensus proof exists yet; persistent proof is
+restricted to authorized `testnetBradbury` runs.
+
 ## Safety model
 
 - Uses an injected external wallet only.
@@ -17,9 +20,13 @@ Contract.
 - Requires `MAJORITY_AGREE` and `FINISHED_WITH_RETURN` before displaying an
   accepted or successfully finalized transaction.
 - Before every write, verifies the injected provider's chain ID, selected
-  consensus contract code, and official consensus ABI probe. Asimov and
-  Bradbury additionally require an exact current head-height and block-hash
-  match against the selected official RPC because both use chain ID `4221`.
+  consensus contract code, and official consensus ABI probe. Bradbury also
+  compares wallet and official RPC block hashes at a stable common block,
+  allowing at most 3 sampled head blocks of lag and using a 2-block
+  confirmation margin, and requires matching Bradbury bytecode and probe
+  output. Because the wallet RPC URL is unavailable, this
+  treats identical execution state as equivalent rather than claiming a
+  cryptographic RPC-identity proof.
 - Reads v2 bounties, bounty submissions, and wallet activity through bounded
   paginated views; activity uses the contract's creator index rather than a
   whole-market scan.
@@ -44,17 +51,17 @@ npm run build
 | Variable | Required | Purpose |
 |---|---:|---|
 | `VITE_CONTRACT_ADDRESS` | yes | Deployed ContentBounty v2 address |
-| `VITE_GENLAYER_NETWORK` | no | `studionet` (default), `testnetAsimov`, or `testnetBradbury` |
+| `VITE_GENLAYER_NETWORK` | no | `studionet` (default smoke/demo) or `testnetBradbury` |
 
 The selector chooses the complete official `genlayer-js` chain object,
 including its RPC, explorer, chain ID, and consensus contract configuration.
 Unsupported and differently-cased values fail the application build/startup.
-Asimov and Bradbury currently share chain ID `4221`; wallet switching cannot
-select between them automatically. If the injected provider's exact chain head,
+Bradbury shares chain ID `4221` with another network; wallet switching cannot
+select between them automatically. If the injected provider's stable block,
 consensus code, or ABI probe is unavailable or mismatched, every write is
 blocked and the UI instructs the user to change the wallet's chain-4221 RPC to
-the selected network. The selected official RPC is used as the identity
-reference; if it is unreachable, the app fails closed rather than guessing.
+Bradbury. The selected official RPC is used as the identity reference; if it
+is unreachable, the app fails closed rather than guessing.
 
 The historical v0.2 address is incompatible with this frontend.
 

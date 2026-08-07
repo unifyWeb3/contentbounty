@@ -1,15 +1,15 @@
 export const PERSISTENT_PROOF_MODE = 'persistent'
 export const STUDIONET_SMOKE_PROOF_MODE = 'studionet-smoke'
 
-const PERSISTENT_NETWORKS = new Set(['testnetAsimov', 'testnetBradbury'])
+const PERSISTENT_NETWORK = 'testnetBradbury'
 
 export function selectLiveProofMode(network, configuredMode) {
   if (!network || !network.trim()) {
-    throw new Error('LIVE_GENLAYER_NETWORK is required; choose testnetBradbury or testnetAsimov for persistent proof.')
+    throw new Error('LIVE_GENLAYER_NETWORK is required; choose testnetBradbury for persistent proof.')
   }
   if (!configuredMode || !configuredMode.trim()) {
     throw new Error(
-      'LIVE_PROOF_MODE is required. Use persistent for Asimov/Bradbury or studionet-smoke for a simulated Studionet demo.',
+      'LIVE_PROOF_MODE is required. Use persistent for testnetBradbury or studionet-smoke for a simulated Studionet demo.',
     )
   }
 
@@ -29,7 +29,7 @@ export function selectLiveProofMode(network, configuredMode) {
     }
   }
 
-  if (PERSISTENT_NETWORKS.has(network)) {
+  if (network === PERSISTENT_NETWORK) {
     if (mode !== PERSISTENT_PROOF_MODE) {
       throw new Error(
         `${network} live verification requires LIVE_PROOF_MODE=persistent; Studionet smoke mode is not a testnet settlement proof.`,
@@ -45,6 +45,6 @@ export function selectLiveProofMode(network, configuredMode) {
   }
 
   throw new Error(
-    `Unsupported live proof network "${network}". Choose testnetBradbury, testnetAsimov, or explicitly use studionet-smoke with studionet.`,
+    `Unsupported live proof network "${network}". Choose testnetBradbury for persistent proof or explicitly use studionet-smoke with studionet.`,
   )
 }
