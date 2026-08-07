@@ -4,6 +4,7 @@ import { createClient } from 'genlayer-js'
 import {
   CONTRACT_ADDRESS,
   EXPLORER_URL,
+  HISTORICAL_V0_2_ADDRESS,
   NETWORK,
   NETWORK_LABEL,
   RPC_URL,
@@ -103,7 +104,8 @@ const postForm = ref({
 const submitForm = ref({ evidenceUri: '', evidenceSha256: '' })
 
 const connected = computed(() => Boolean(walletAddress.value))
-const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS))
+const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS)
+  && CONTRACT_ADDRESS.toLowerCase() !== HISTORICAL_V0_2_ADDRESS.toLowerCase())
 const mySubmissions = computed(() => {
   if (!walletAddress.value) return []
   const address = walletAddress.value.toLowerCase()
@@ -631,7 +633,7 @@ onMounted(async () => {
 
         <div v-if="!contractConfigured" class="empty-card">
           <h3>Contract address required</h3>
-          <p>Set <code>VITE_CONTRACT_ADDRESS</code> to the deployed v2 address. The historical v0.2 deployment is intentionally incompatible.</p>
+          <p>Set <code>VITE_CONTRACT_ADDRESS</code> to the deployed v2 address. The historical v0.2 deployment is explicitly blocked as incompatible.</p>
         </div>
         <div v-else-if="!loading && !bounties.length" class="empty-card"><h3>No bounties yet</h3><p>Post the first bounded rubric and escrow.</p></div>
         <div v-else class="bounty-layout">
@@ -757,7 +759,7 @@ onMounted(async () => {
 
     <footer>
       <div><strong>ContentBounty v2</strong><span>{{ NETWORK_LABEL }} · {{ RPC_URL }}</span></div>
-      <div><a :href="`${EXPLORER_URL}/address/${CONTRACT_ADDRESS}`" target="_blank" rel="noreferrer">Contract {{ shortAddress(CONTRACT_ADDRESS) }} ↗</a><span>External signer only</span></div>
+      <div><a v-if="contractConfigured" :href="`${EXPLORER_URL}/address/${CONTRACT_ADDRESS}`" target="_blank" rel="noreferrer">Contract {{ shortAddress(CONTRACT_ADDRESS) }} ↗</a><span v-else>v2 contract not configured</span><span>External signer only</span></div>
     </footer>
   </div>
 </template>

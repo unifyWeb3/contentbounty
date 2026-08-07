@@ -15,6 +15,7 @@ export const NETWORK = configuredRpc
 
 export const NETWORK_LABEL = (import.meta.env.VITE_GENLAYER_NETWORK_LABEL as string | undefined)?.trim() || NETWORK.name
 export const CONTRACT_ADDRESS = ((import.meta.env.VITE_CONTRACT_ADDRESS as string | undefined)?.trim() || '') as `0x${string}`
+export const HISTORICAL_V0_2_ADDRESS = '0xFf546d6B1CD45d2859a705a7FA181807670B9015'
 export const EXPLORER_URL = ((import.meta.env.VITE_GENLAYER_EXPLORER_URL as string | undefined)?.trim()
   || NETWORK.blockExplorers?.default.url
   || 'https://explorer-studio.genlayer.com').replace(/\/$/, '')

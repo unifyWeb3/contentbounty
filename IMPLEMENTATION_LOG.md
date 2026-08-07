@@ -255,6 +255,9 @@ git diff --quiet -- AUDIT_REPORT.md
 
 - No v2 contract address or deployment transaction exists yet. Deployment needs
   an explicitly supplied funded deployer key and a reachable selected network.
+- The ignored local `frontend/.env` still contains the historical v0.2 address.
+  It was preserved as user-local state; the application now explicitly blocks
+  that address, and the file must be updated after v2 deployment.
 - A live browser signing/evaluation/finality smoke test depends on that v2
   deployment.
 - Studio/localnet integration tests and an automated recipient balance-delta
