@@ -1,9 +1,11 @@
 {
   "scripts": {
     "lint:contract": ".venv/bin/genvm-lint lint contracts/content_bounty.py",
+    "check:contract": "bash scripts/check_contract.sh",
     "test:contract": ".venv/bin/pytest tests/direct -v",
     "test:evidence": ".venv/bin/pytest tests/unit/test_prepare_evidence.py -v",
     "test:network": "node --test tests/js/network_selection.test.mjs",
+    "test:live": "node tests/integration/live_consensus.mjs",
     "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {

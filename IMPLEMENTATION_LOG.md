@@ -559,3 +559,105 @@ cd frontend && npm run build
 
 - The creator view has Direct Mode and semantic-schema coverage but no live RPC
   pagination evidence until v2.1 is deployed.
+
+## 2026-08-07 — CI and live-consensus proof structure
+
+### Decisions and assumptions
+
+- Added `scripts/check_contract.sh` and `npm run check:contract`. Clean runs pin
+  `GENVM_VERSION=v0.2.16`, select the official release bundle, and execute full
+  `genvm-lint check --json`; local constrained runs may explicitly override the
+  source mode with a verified prebuilt tree.
+- Added GitHub Actions CI on Node 22/Python 3.12. It installs the commit-pinned
+  Python requirements and both npm lockfiles, checks out only the official
+  GenVM Python runner at commit
+  `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, then runs semantic lint, Direct
+  Mode, evidence preparation, network selection, frontend unit tests,
+  typecheck/build, and clean-diff checks.
+- Added an opt-in live runner that deploys the current source with the complete
+  selected official chain object. Every transaction must produce a successful
+  `ACCEPTED/MAJORITY_AGREE/FINISHED_WITH_RETURN` observation and then a separate
+  successful `FINALIZED` observation.
+- The live runner structures proof for clear rejection (including a real-model
+  adversarial evidence fixture), mutation/fetch inconclusive behavior, clear
+  approval, finalized recipient balance delta, deployment/source metadata, and
+  explorer links. It writes no private keys and creates its proof file with mode
+  `0600`.
+- Public SDK/testnet APIs expose no authorized leader-result fabrication hook.
+  The live proof records fabricated-leader disagreement as unsupported instead
+  of claiming it was tested. An authorized validator harness remains necessary.
+- CI deliberately excludes live tests because they spend funds, mutate external
+  evidence, and create persistent network state.
+
+### Commands and results
+
+```text
+node --check tests/integration/live_consensus.mjs
+=> PASS
+
+GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 npm run check:contract
+=> PASS; full lint 3/3 and semantic schema validation (10 methods, 5 view, 5 write)
+
+npm run test:live
+=> EXPECTED EXTERNAL-BLOCKER FAILURE; exit code 1 listing the six required live
+credentials/evidence variables; no RPC call, deployment, or credential access
+occurred
+```
+
+### Remaining external blockers
+
+- Studionet was in the GenLayer team's announced maintenance window during this
+  work. No availability probe was made to avoid conflating maintenance with an
+  implementation failure.
+- No deployment authorization, funded deployer/creator keys, stable approval /
+  adversarial rejection fixtures, or mutable-evidence webhook were supplied.
+- Consequently there is no v2.1 contract address, transaction hash, explorer
+  link, accepted/finalized live receipt pair, real-model adversarial result, or
+  recipient balance-delta proof.
+- Fabricated leader disagreement additionally requires a GenLayer-provided or
+  authorized validator harness not exposed by the current public SDK/testnets.
+
+### Deployments
+
+| Network | Contract address | Deployment transaction | Source commit | Status |
+|---|---|---|---|---|
+| v2.1 | Not deployed | Not deployed | Not deployed | Blocked on authorization, credentials, fixtures, and reachable network |
+
+## 2026-08-07 — final offline verification gate
+
+```text
+GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 npm run check:contract
+=> PASS; full semantic lint and schema validation, 10 methods (5 view / 5 write)
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> npm run test:contract -- --quiet
+=> PASS; 23 passed in 1.81s
+
+npm run test:evidence -- --quiet
+=> PASS; 2 passed in 0.04s
+
+npm run test:network
+=> PASS; Node test runner, 3 internal assertions
+
+cd frontend && npm test
+=> PASS; 2 files, 33 tests in 2.81s
+
+cd frontend && npm run build
+=> PASS; vue-tsc and Vite 8.2.1 production build; 460 modules; largest chunk
+470.90 kB (100.72 kB gzip)
+
+node --check deploy.mjs
+node --check tests/integration/live_consensus.mjs
+=> PASS
+
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+=> PASS; workflow parsed successfully
+
+git diff --check
+git diff --quiet -- AUDIT_REPORT.md
+=> PASS; no whitespace errors and AUDIT_REPORT.md remains unmodified
+```
+
+The offline implementation is ready for another independent code review. It is
+not resubmission-ready: the live deployment, real-model/adversarial consensus,
+accepted-versus-finalized explorer proof, and finalized recipient balance delta
+remain externally blocked and unproven.

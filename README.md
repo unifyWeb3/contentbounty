@@ -125,6 +125,7 @@ the reward as confirmed paid.
 contracts/content_bounty.py       ContentBounty v2 Intelligent Contract
 tests/direct/                     adversarial GenLayer Direct Mode tests
 docs/CONTENT_BOUNTY_V2_SPEC.md    lifecycle and equivalence specification
+docs/LIVE_CONSENSUS_TESTING.md    authorized live-proof procedure
 frontend/                         external-signer Vue application
 deploy.mjs                        validated multi-network deployment helper
 IMPLEMENTATION_LOG.md             auditable implementation-session record
@@ -140,11 +141,16 @@ The pinned Python toolchain is recorded in `requirements.txt` and
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 npm run lint:contract
+npm run check:contract
 npm run test:contract
+npm run test:evidence
+npm run test:network
 ```
 
 Direct Mode may need `GENVM_PY_STD_SOURCE` pointed at an official compatible
 GenVM Python runner checkout when its normal cache is unavailable.
+`check:contract` runs full semantic validation with GenVM `v0.2.16`; it is not
+the shorter three-check AST-only lint command.
 
 ## Run the frontend
 
@@ -181,6 +187,22 @@ The default selector is `studionet`. Unsupported values and any unsuccessful
 receipt return a nonzero exit code. Do not commit the key. After successful
 finalization, record the network, contract address, transaction hash, source
 commit, and source SHA-256 in `IMPLEMENTATION_LOG.md`.
+
+## Live consensus proof
+
+The opt-in integration runner deploys the current source, observes separate
+accepted and finalized receipts, exercises clear approval/rejection and mutable
+evidence failure, and verifies the finalized winner balance delta. It is never
+run by CI and requires explicit authorization plus funded keys and external
+evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
+
+## Continuous integration
+
+GitHub Actions installs the commit-pinned Python dependencies, uses the official
+GenVM `v0.2.16` source at commit
+`387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, and runs full semantic lint,
+23 Direct Mode tests, evidence/network tests, 33 frontend tests, frontend
+typecheck/build, and diff checks.
 
 ## License
 
