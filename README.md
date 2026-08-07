@@ -85,8 +85,11 @@ observed lifecycle states.
 The UI distinguishes:
 
 1. `SUBMITTED`: a consensus transaction id exists;
-2. `ACCEPTED`: validators agreed, but finalization may still be appealable;
-3. `FINALIZED`: execution is final.
+2. `PROCESSING`: consensus, appeal, or finalization is still in progress;
+3. `ACCEPTED`: status is accepted, a majority agreed, and execution returned
+   successfully, but finalization may still be appealable;
+4. `FINALIZED`: final status, majority agreement, and successful execution are
+   all present.
 
 Even a finalized approved evaluation proves that the contract emitted the
 transfer; a recipient balance delta should still be checked before describing
@@ -99,7 +102,7 @@ contracts/content_bounty.py       ContentBounty v2 Intelligent Contract
 tests/direct/                     adversarial GenLayer Direct Mode tests
 docs/CONTENT_BOUNTY_V2_SPEC.md    lifecycle and equivalence specification
 frontend/                         external-signer Vue application
-deploy.mjs                        Studionet deployment helper
+deploy.mjs                        validated multi-network deployment helper
 IMPLEMENTATION_LOG.md             auditable implementation-session record
 AUDIT_REPORT.md                    immutable source audit and handoff
 ```
@@ -125,7 +128,7 @@ GenVM Python runner checkout when its normal cache is unavailable.
 cd frontend
 npm install
 cp .env.example .env
-# set VITE_CONTRACT_ADDRESS to a deployed v2 contract
+# select VITE_GENLAYER_NETWORK and set a matching deployed v2 address
 npm run dev
 ```
 
@@ -138,15 +141,22 @@ npm run build
 ## Deploy v2
 
 Deployment uses the root `genlayer-js` dependency and reads the deployer key
-from the process environment rather than a command-line argument:
+from the process environment rather than a command-line argument. The network
+selector accepts only `studionet`, `testnetAsimov`, or `testnetBradbury`; it
+uses the selected official chain object's RPC, explorer, chain ID, and consensus
+contracts:
 
 ```bash
 npm install
-GENLAYER_DEPLOYER_PRIVATE_KEY=0x... node deploy.mjs
+GENLAYER_NETWORK=testnetBradbury \
+GENLAYER_DEPLOYER_PRIVATE_KEY=0x... \
+node deploy.mjs
 ```
 
-Do not commit the key. After finalization, record the network, contract address,
-transaction hash, and source commit in `IMPLEMENTATION_LOG.md`.
+The default selector is `studionet`. Unsupported values and any unsuccessful
+receipt return a nonzero exit code. Do not commit the key. After successful
+finalization, record the network, contract address, transaction hash, source
+commit, and source SHA-256 in `IMPLEMENTATION_LOG.md`.
 
 ## License
 

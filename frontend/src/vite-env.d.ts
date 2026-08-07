@@ -2,9 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_CONTRACT_ADDRESS?: string
-  readonly VITE_GENLAYER_RPC_URL?: string
-  readonly VITE_GENLAYER_NETWORK_LABEL?: string
-  readonly VITE_GENLAYER_EXPLORER_URL?: string
+  readonly VITE_GENLAYER_NETWORK?: string
 }
 
 interface ImportMeta {

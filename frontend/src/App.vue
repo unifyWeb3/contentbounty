@@ -8,6 +8,7 @@ import {
   HISTORICAL_V0_2_ADDRESS,
   NETWORK,
   NETWORK_LABEL,
+  NETWORK_SELECTOR,
   RPC_URL,
   walletChainParameters,
 } from './lib/genlayer'
@@ -83,7 +84,7 @@ interface TxEvidence {
 
 const TX_STORAGE_KEY = 'contentbounty:v2:transactions'
 const provider = computed<EthereumProvider | undefined>(() => (window as any).ethereum)
-const readClient = createClient({ chain: NETWORK as any, account: {} as any }) as any
+const readClient = createClient({ chain: NETWORK }) as any
 
 const activeView = ref<'bounties' | 'post' | 'activity' | 'transactions'>('bounties')
 const walletAddress = ref<Address | ''>('')
@@ -246,7 +247,7 @@ function externalAccount(address: Address) {
 function writeClient() {
   if (!provider.value || !walletAddress.value) throw new Error('Connect an injected wallet first.')
   return createClient({
-    chain: NETWORK as any,
+    chain: NETWORK,
     account: walletAddress.value as any,
     provider: provider.value as any,
   }) as any
@@ -254,7 +255,7 @@ function writeClient() {
 
 async function ensureWalletNetwork() {
   if (!provider.value) throw new Error('No injected wallet was found. Install a compatible wallet extension.')
-  const expected = `0x${Number((NETWORK as any).id).toString(16)}`
+  const expected = `0x${Number(NETWORK.id).toString(16)}`
   const current = await provider.value.request({ method: 'eth_chainId' })
   if (String(current).toLowerCase() === expected.toLowerCase()) return
   try {
@@ -802,7 +803,7 @@ onMounted(async () => {
     </main>
 
     <footer>
-      <div><strong>ContentBounty v2</strong><span>{{ NETWORK_LABEL }} · {{ RPC_URL }}</span></div>
+      <div><strong>ContentBounty v2</strong><span>{{ NETWORK_LABEL }} ({{ NETWORK_SELECTOR }}) · {{ RPC_URL }}</span></div>
       <div><a v-if="contractConfigured" :href="`${EXPLORER_URL}/address/${CONTRACT_ADDRESS}`" target="_blank" rel="noreferrer">Contract {{ shortAddress(CONTRACT_ADDRESS) }} ↗</a><span v-else>v2 contract not configured</span><span>External signer only</span></div>
     </footer>
   </div>

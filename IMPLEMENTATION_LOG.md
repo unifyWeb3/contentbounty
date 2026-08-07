@@ -323,3 +323,67 @@ git diff --check
   the announced maintenance window. No v2 deployment has been performed.
 - Finalized payout and recipient balance-delta proof remain blocked on a live
   selected network and explicit deployment authorization.
+
+## 2026-08-07 — official network selection
+
+### Decisions and assumptions
+
+- Replaced RPC/label/explorer overrides with one validated selector in each
+  runtime: `VITE_GENLAYER_NETWORK` for the browser and `GENLAYER_NETWORK` for
+  deployment. Both accept only `studionet`, `testnetAsimov`, or
+  `testnetBradbury`, default to `studionet`, and reject differently-cased or
+  unsupported values.
+- Each selector returns the complete official `genlayer-js/chains` object. No
+  chain ID, RPC URL, explorer, or consensus contract is independently mixed
+  with another network's configuration.
+- Official genlayer-js 1.1.8 values used in this session:
+  - `studionet`: chain ID `61999`, RPC `https://studio.genlayer.com/api`,
+    consensus `0xb7278A61aa25c888815aFC32Ad3cC52fF24fE575`;
+  - `testnetAsimov`: chain ID `4221`, RPC
+    `https://rpc-asimov.genlayer.com`, consensus
+    `0x6CAFF6769d70824745AD895663409DC70aB5B28E`;
+  - `testnetBradbury`: chain ID `4221`, RPC
+    `https://rpc-bradbury.genlayer.com`, consensus
+    `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D`.
+- Asimov and Bradbury share chain ID `4221`. Wallet switching uses the selected
+  official wallet parameters, but an injected wallet cannot prove which RPC it
+  associates with a shared chain ID. Documentation requires its chain-4221 RPC
+  to match the network selector displayed by the application.
+- The deployment helper now logs selector, network name, chain ID, RPC,
+  consensus contract, explorer, deployer address, source path, source SHA-256,
+  source commit/dirty state, transaction hash, and explorer links. It exits
+  nonzero for invalid configuration, SDK errors, non-successful receipt
+  classification, or a missing deployment address.
+- No deployment was attempted. The announced Studionet maintenance window and
+  the prohibition on using credentials without explicit authorization remain
+  in force.
+
+### Commands and results
+
+```text
+npm run test:network
+=> PASS; Node test runner, 3 network-selection assertions
+
+cd frontend && npm test
+=> PASS; 2 files, 33 tests (27 receipt-classifier + 6 network-selection)
+
+cd frontend && npm run build
+=> PASS; vue-tsc and Vite production build, 460 modules transformed
+
+node --check deploy.mjs
+=> PASS
+
+env GENLAYER_NETWORK=localnet node deploy.mjs
+=> EXPECTED FAILURE; exit code 1 and explicit supported-value error
+
+env GENLAYER_NETWORK=testnetBradbury GENLAYER_DEPLOYER_PRIVATE_KEY=bad node deploy.mjs
+=> EXPECTED FAILURE; exit code 1 and private-key validation error; no network call
+```
+
+### Remaining blockers
+
+- Wallets identify networks primarily by chain ID; Asimov versus Bradbury RPC
+  selection cannot be independently attested by `eth_chainId` because both use
+  `4221`.
+- Live deploy/finality and balance-delta evidence are still blocked on explicit
+  authorization, a funded key, and a reachable selected network.
