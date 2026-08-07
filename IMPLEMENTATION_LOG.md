@@ -246,6 +246,7 @@ git diff --quiet -- AUDIT_REPORT.md
 - [x] Manual settlement and pseudo-admin controls removed.
 - [x] Network configuration centralized and SDK upgraded to `1.1.8`.
 - [x] TypeScript and production build pass.
+- [x] Frontend milestone committed as `47001b6`.
 - [ ] Run a live injected-wallet smoke test after a v2 contract is deployed.
 - [ ] Prove a finalized payout with a recipient balance delta on the selected
   network.
@@ -264,4 +265,4 @@ git diff --quiet -- AUDIT_REPORT.md
 | Network | Contract address | Deployment transaction | Source commit | Status |
 |---|---|---|---|---|
 | Studionet (historical v0.2) | `0xFf546d6B1CD45d2859a705a7FA181807670B9015` | Not verified in this session | `a09fe6a` lineage | Historical only; incompatible with v2 |
-| v2 | Not deployed | Not deployed | Frontend milestone pending commit | Blocked on deployer credentials/network execution |
+| v2 | Not deployed | Not deployed | `47001b6` | Blocked on deployer credentials/network execution |
