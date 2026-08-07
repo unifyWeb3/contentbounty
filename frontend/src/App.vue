@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { createClient } from 'genlayer-js'
+import { TransactionStatus } from 'genlayer-js/types'
 import {
   CONTRACT_ADDRESS,
   EXPLORER_URL,
@@ -10,6 +11,12 @@ import {
   RPC_URL,
   walletChainParameters,
 } from './lib/genlayer'
+import {
+  classifyTransaction,
+  isVerifiedSuccessfulFinalization,
+  type TransactionClassification,
+  type TransactionPhase,
+} from './lib/transactionClassifier'
 
 type Address = `0x${string}`
 
@@ -60,16 +67,17 @@ interface CriterionDraft {
   requirement: string
 }
 
-type TxPhase = 'SUBMITTED' | 'ACCEPTED' | 'FINALIZED' | 'FAILED'
-
 interface TxEvidence {
   hash: string
   action: 'POST' | 'SUBMIT' | 'EVALUATE' | 'CANCEL' | 'EXPIRE'
   entityId?: number
   label: string
   submittedAt: number
-  phase: TxPhase
+  phase: TransactionPhase
+  statusName?: string
   resultName?: string
+  executionResultName?: string
+  failureReason?: string
   error?: string
 }
 
@@ -115,6 +123,13 @@ const openBounties = computed(() => bounties.value.filter((bounty) => ['OPEN', '
 const lockedValue = computed(() => bounties.value
   .filter((bounty) => ['OPEN', 'LOCKED'].includes(bounty.status))
   .reduce((sum, bounty) => sum + BigInt(bounty.reward), 0n))
+const verifiedFinalizedTransactions = computed(() => transactions.value.filter((entry) =>
+  isVerifiedSuccessfulFinalization({
+    statusName: entry.statusName,
+    resultName: entry.resultName,
+    txExecutionResultName: entry.executionResultName,
+  }),
+).length)
 
 function loadTransactions(): TxEvidence[] {
   try {
@@ -140,6 +155,16 @@ function patchTransaction(hash: string, patch: Partial<TxEvidence>) {
   const current = transactions.value.find((item) => item.hash === hash)
   if (!current) return
   upsertTransaction({ ...current, ...patch })
+}
+
+function applyTransactionClassification(hash: string, classification: TransactionClassification) {
+  patchTransaction(hash, {
+    phase: classification.phase,
+    statusName: classification.statusName,
+    resultName: classification.resultName,
+    executionResultName: classification.executionResultName,
+    failureReason: classification.failureReason,
+  })
 }
 
 function showNotice(message: string, type: 'info' | 'success' | 'error' = 'info') {
@@ -203,8 +228,14 @@ function settlementLabel(submission: Submission) {
   if (submission.status !== 'APPROVED') return ''
   const evidence = evaluationEvidence(submission.id)
   if (!evidence) return 'Approved on-chain. This browser has no transaction evidence for payout confirmation.'
-  if (evidence.phase === 'FINALIZED') return 'Finalized evaluation; transfer was emitted. Confirm recipient balance before describing the reward as paid.'
-  if (evidence.phase === 'ACCEPTED') return 'Consensus accepted. The transfer is not final yet.'
+  const classification = classifyTransaction({
+    statusName: evidence.statusName,
+    resultName: evidence.resultName,
+    txExecutionResultName: evidence.executionResultName,
+  })
+  if (classification.phase === 'FINALIZED') return 'Evaluation finalized successfully; contract execution returned normally. Confirm the recipient balance delta before describing the reward as paid.'
+  if (classification.phase === 'ACCEPTED') return 'Consensus majority agreed and execution returned successfully. The transaction is accepted but not final.'
+  if (classification.phase === 'FAILED') return `The recorded evaluation transaction failed: ${classification.failureReason ?? 'unknown failure'}. Settlement is not confirmed.`
   return 'Evaluation submitted. Settlement is not confirmed.'
 }
 
@@ -367,16 +398,27 @@ async function runWrite(
   try {
     const accepted = await client.waitForTransactionReceipt({
       hash,
-      status: 'ACCEPTED' as any,
+      status: TransactionStatus.ACCEPTED,
       retries: 120,
       interval: 3000,
     })
-    const resultName = String(accepted?.result_name ?? accepted?.resultName ?? '')
-    patchTransaction(hash, { phase: 'ACCEPTED', resultName })
-    showNotice(`${label} accepted by consensus. Finalization is still pending.`, 'success')
-    void waitForFinalization(hash, label)
+    const classification = classifyTransaction(accepted)
+    applyTransactionClassification(hash, classification)
+    if (classification.phase === 'FAILED') {
+      throw new Error(classification.failureReason ?? `${label} did not reach a successful consensus result.`)
+    }
+    if (classification.phase === 'FINALIZED') {
+      showNotice(`${label} finalized successfully. Verify any expected balance change independently.`, 'success')
+      await refreshSelected()
+    } else if (classification.phase === 'ACCEPTED') {
+      showNotice(`${label} reached majority agreement with successful execution. Finalization is still pending.`, 'success')
+      void waitForFinalization(hash, label)
+    } else {
+      showNotice(`${label} returned ${classification.statusName || 'an unknown status'} without verified acceptance. Tracking continues.`)
+      void waitForFinalization(hash, label)
+    }
   } catch (error: any) {
-    patchTransaction(hash, { phase: 'FAILED', error: error?.message ?? String(error) })
+    patchTransaction(hash, { error: error?.message ?? String(error) })
     throw error
   }
   return hash
@@ -386,14 +428,20 @@ async function waitForFinalization(hash: string, label: string) {
   try {
     const finalized = await readClient.waitForTransactionReceipt({
       hash,
-      status: 'FINALIZED' as any,
+      status: TransactionStatus.FINALIZED,
       retries: 240,
       interval: 5000,
     })
-    const resultName = String(finalized?.result_name ?? finalized?.resultName ?? '')
-    patchTransaction(hash, { phase: 'FINALIZED', resultName })
-    showNotice(`${label} finalized. Refresh chain state and verify any balance transfer independently.`, 'success')
-    await refreshSelected()
+    const classification = classifyTransaction(finalized)
+    applyTransactionClassification(hash, classification)
+    if (classification.phase === 'FINALIZED') {
+      showNotice(`${label} finalized successfully. Refresh chain state and verify any balance transfer independently.`, 'success')
+      await refreshSelected()
+    } else if (classification.phase === 'FAILED') {
+      showNotice(`${label} failed: ${classification.failureReason ?? 'unknown transaction failure'}`, 'error')
+    } else {
+      showNotice(`${label} returned ${classification.statusName || 'an unknown status'} without verified successful finalization.`)
+    }
   } catch (error: any) {
     const message = error?.message ?? String(error)
     if (!/timeout|retries/i.test(message)) patchTransaction(hash, { error: message })
@@ -401,13 +449,9 @@ async function waitForFinalization(hash: string, label: string) {
 }
 
 async function syncTransaction(entry: TxEvidence) {
-  if (entry.phase === 'FINALIZED' || entry.phase === 'FAILED') return
   try {
     const transaction = await readClient.getTransaction({ hash: entry.hash })
-    const status = String(transaction?.status_name ?? transaction?.statusName ?? transaction?.status ?? '')
-    const resultName = String(transaction?.result_name ?? transaction?.resultName ?? entry.resultName ?? '')
-    if (status === 'FINALIZED' || status === '7') patchTransaction(entry.hash, { phase: 'FINALIZED', resultName })
-    else if (['ACCEPTED', 'READY_TO_FINALIZE', '5', '11'].includes(status)) patchTransaction(entry.hash, { phase: 'ACCEPTED', resultName })
+    applyTransactionClassification(entry.hash, classifyTransaction(transaction))
   } catch (error: any) {
     patchTransaction(entry.hash, { error: error?.message ?? String(error) })
   }
@@ -622,7 +666,7 @@ onMounted(async () => {
         <div><strong>{{ bounties.length }}</strong><span>known bounties</span></div>
         <div><strong>{{ openBounties }}</strong><span>accepting or evaluating</span></div>
         <div><strong>{{ formatWei(lockedValue) }} GEN</strong><span>contract escrow in active bounties</span></div>
-        <div><strong>{{ transactions.filter(t => t.phase === 'FINALIZED').length }}</strong><span>finalized in this browser</span></div>
+        <div><strong>{{ verifiedFinalizedTransactions }}</strong><span>verified successful finalizations</span></div>
       </section>
 
       <section v-if="activeView === 'bounties'" class="workspace">
@@ -746,13 +790,13 @@ onMounted(async () => {
         <div v-else class="transaction-list">
           <article v-for="entry in transactions" :key="entry.hash" class="transaction-card">
             <div><span :class="statusClass(entry.phase)">{{ entry.phase }}</span><strong>{{ entry.label }}</strong><small>{{ new Date(entry.submittedAt).toLocaleString() }}</small></div>
-            <div><a :href="`${EXPLORER_URL}/tx/${entry.hash}`" target="_blank" rel="noreferrer" class="mono">{{ shortAddress(entry.hash) }} ↗</a><span v-if="entry.resultName">{{ entry.resultName }}</span><small v-if="entry.error">{{ entry.error }}</small></div>
+            <div><a :href="`${EXPLORER_URL}/tx/${entry.hash}`" target="_blank" rel="noreferrer" class="mono">{{ shortAddress(entry.hash) }} ↗</a><span v-if="entry.statusName">status: {{ entry.statusName }}</span><span v-if="entry.resultName">consensus: {{ entry.resultName }}</span><span v-if="entry.executionResultName">execution: {{ entry.executionResultName }}</span><small v-if="entry.failureReason">{{ entry.failureReason }}</small><small v-if="entry.error">Observation error: {{ entry.error }}</small></div>
           </article>
         </div>
         <div class="finality-guide">
           <div><span class="phase-dot submitted"></span><strong>Submitted</strong><p>The consensus transaction id exists. No verdict is claimed.</p></div>
-          <div><span class="phase-dot accepted"></span><strong>Accepted</strong><p>Validators agreed, but an appeal/finalization window may remain.</p></div>
-          <div><span class="phase-dot finalized"></span><strong>Finalized</strong><p>The contract execution is final. Verify recipient balance separately before claiming payment confirmation.</p></div>
+          <div><span class="phase-dot accepted"></span><strong>Accepted</strong><p>A majority agreed and execution returned successfully, but an appeal/finalization window may remain.</p></div>
+          <div><span class="phase-dot finalized"></span><strong>Finalized successfully</strong><p>Final status, majority agreement, and successful execution are all present. Verify recipient balance separately before claiming payment confirmation.</p></div>
         </div>
       </section>
     </main>

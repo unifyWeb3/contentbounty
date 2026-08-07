@@ -269,3 +269,57 @@ git diff --quiet -- AUDIT_REPORT.md
 |---|---|---|---|---|
 | Studionet (historical v0.2) | `0xFf546d6B1CD45d2859a705a7FA181807670B9015` | Not verified in this session | `a09fe6a` lineage | Historical only; incompatible with v2 |
 | v2 | Not deployed | Not deployed | `47001b6` | Blocked on deployer credentials/network execution |
+
+## 2026-08-07 — receipt classification hardening
+
+### Decisions and assumptions
+
+- Added a pure frontend receipt classifier in `frontend/src/lib/transactionClassifier.ts`.
+  It accepts official enum names, numeric SDK fields, and legacy snake-case RPC
+  fields, then persists the observed status, consensus result, execution result,
+  and an explicit failure reason.
+- A transaction is only `ACCEPTED` when its status is `ACCEPTED`, its consensus
+  result is `MAJORITY_AGREE`, and execution is `FINISHED_WITH_RETURN`. A
+  transaction is only `FINALIZED` when all three checks hold with
+  `FINALIZED` status. Finalized execution errors, disagreement/no-majority,
+  undetermined, cancellation, leader timeout, and validator timeout are
+  terminal `FAILED` states.
+- `READY_TO_FINALIZE` and appeal states remain processing states; they never
+  receive accepted or settlement copy. RPC polling errors remain observation
+  errors rather than being mislabeled as on-chain execution failures.
+- Numeric result normalization follows the installed genlayer-js 1.1.8
+  mappings and fails closed for unknown finalized values. The current official
+  source also documents newer names (`MAJORITY_TIMEOUT`, `TIMEOUT`, and
+  `NONDET_DISAGREE`), which are recognized as failures when returned by name.
+- Studionet was reported unavailable by the GenLayer team during this session
+  (temporary one-hour maintenance window). No deployment or live RPC smoke test
+  was attempted; live evidence remains blocked until service returns.
+
+### GenLayer and frontend versions used
+
+- `genlayer-js` `1.1.8`
+- `vitest` `3.2.7` (installed from the `^3.2.4` dev dependency)
+- Vue `3.5.31`, TypeScript `5.9.3`, Vite `8.2.1`
+
+### Commands and results
+
+```text
+cd frontend && npm install --cache /tmp/contentbounty-npm-cache
+=> PASS; added Vitest and updated the lockfile; 0 vulnerabilities reported
+
+cd frontend && npm test
+=> PASS; 1 file, 27 tests
+
+cd frontend && npm run build
+=> PASS; vue-tsc project build and Vite production bundle
+
+git diff --check
+=> PASS
+```
+
+### Remaining blockers
+
+- No live receipt or explorer evidence can be collected while Studionet is in
+  the announced maintenance window. No v2 deployment has been performed.
+- Finalized payout and recipient balance-delta proof remain blocked on a live
+  selected network and explicit deployment authorization.
