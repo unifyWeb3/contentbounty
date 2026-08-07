@@ -109,7 +109,7 @@ git diff --check
 | Network | Contract address | Deployment transaction | Source commit | Status |
 |---|---|---|---|---|
 | Studionet (historical v0.2) | `0xFf546d6B1CD45d2859a705a7FA181807670B9015` | Not verified in this session | `a09fe6a` lineage | Historical only |
-| v2 | Not deployed | Not deployed | Not committed | Pending contract gates |
+| v2 | Not deployed | Not deployed | `015ba57` | Contract gate passed; deployment pending |
 
 ## Contract milestone status
 
@@ -120,7 +120,8 @@ git diff --check
   extract, judge, and compare payout-controlling fields.
 - [x] `genvm-lint lint` and full `genvm-lint check` pass.
 - [x] 16 adversarial Direct Mode tests pass.
-- [ ] Commit milestone and begin frontend rebuild only after this contract gate.
+- [x] Contract milestone committed as `015ba57`.
+- [ ] Begin frontend rebuild as the next stage.
 
 ## 2026-08-07 — final contract gate rerun
 
@@ -136,4 +137,7 @@ git diff --check
 
 git diff --quiet -- AUDIT_REPORT.md
 => PASS; AUDIT_REPORT.md remains unmodified
+
+git commit -m "feat(contract): rebuild ContentBounty v2 adjudication"
+=> PASS; milestone commit 015ba57
 ```
