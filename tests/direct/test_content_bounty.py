@@ -174,9 +174,118 @@ def test_prepared_fixture_matches_submission_and_evaluation_path(
 def test_submission_requires_consensus_rendered_commitment(direct_vm, direct_deploy):
     contract = direct_deploy(CONTRACT)
     bounty_id = post(contract, direct_vm)
-    with pytest.raises(AssertionError, match="could not be rendered during submission"):
+    with pytest.raises(AssertionError, match="FETCH_FAILED"):
         contract.submit_content(bounty_id, URI)
     assert contract.get_bounty(bounty_id)["submission_count"] == 0
+
+
+def assert_bounty_has_no_submission_state(contract, bounty_id):
+    bounty = contract.get_bounty(bounty_id)
+    assert bounty["status"] == "OPEN"
+    assert bounty["submission_count"] == 0
+    assert contract.get_submissions_page(bounty_id, 0, 50) == []
+    assert contract.get_creator_submissions_page(bounty["poster"], 0, 50) == []
+    with pytest.raises(AssertionError, match="Submission does not exist"):
+        contract.get_submission(0)
+
+
+@pytest.mark.parametrize(
+    ("body", "reason_code"),
+    [
+        pytest.param("", "EMPTY_EVIDENCE", id="empty"),
+        pytest.param(" \r\n\t  ", "EMPTY_EVIDENCE", id="whitespace-only"),
+    ],
+)
+def test_empty_rendered_evidence_fails_without_state(
+    direct_vm, direct_deploy, body, reason_code
+):
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": body})
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+
+    with pytest.raises(AssertionError, match=reason_code):
+        contract.submit_content(bounty_id, URI)
+
+    assert_bounty_has_no_submission_state(contract, bounty_id)
+
+
+def test_16000_character_evidence_is_valid(direct_vm, direct_deploy):
+    body = "x" * 16_000
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": body})
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+
+    submission_id = contract.submit_content(bounty_id, URI)
+
+    assert submission_id == 0
+    assert contract.get_submission(submission_id)["evidence_sha256"] == digest(body)
+    assert contract.get_bounty(bounty_id)["status"] == "LOCKED"
+    assert contract.get_bounty(bounty_id)["submission_count"] == 1
+
+
+def test_16001_character_evidence_fails_without_state(direct_vm, direct_deploy):
+    direct_vm.mock_web(
+        r"evidence\.example/content",
+        {"status": 200, "body": "x" * 16_001},
+    )
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+
+    with pytest.raises(AssertionError, match="EVIDENCE_TOO_LARGE"):
+        contract.submit_content(bounty_id, URI)
+
+    assert_bounty_has_no_submission_state(contract, bounty_id)
+
+
+def test_invalid_submission_can_retry_without_consuming_indexes(
+    direct_vm, direct_deploy
+):
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": " \n "})
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+
+    with pytest.raises(AssertionError, match="EMPTY_EVIDENCE"):
+        contract.submit_content(bounty_id, URI)
+    assert_bounty_has_no_submission_state(contract, bounty_id)
+
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": BODY})
+    submission_id = contract.submit_content(bounty_id, URI)
+    bounty = contract.get_bounty(bounty_id)
+    creator_page = contract.get_creator_submissions_page(bounty["poster"], 0, 50)
+
+    assert submission_id == 0
+    assert bounty["submission_count"] == 1
+    assert bounty["status"] == "LOCKED"
+    assert [item["id"] for item in creator_page] == [0]
+
+
+def test_validator_requires_matching_invalid_commitment_reason(
+    direct_vm, direct_deploy
+):
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": ""})
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+    with pytest.raises(AssertionError, match="EMPTY_EVIDENCE"):
+        contract.submit_content(bounty_id, URI)
+
+    empty_commitment = {
+        "ok": False,
+        "evidence_hash": "",
+        "char_count": 0,
+        "reason_code": "EMPTY_EVIDENCE",
+    }
+    assert direct_vm.run_validator(leader_result=empty_commitment) is True
+    mismatched_reason = dict(empty_commitment)
+    mismatched_reason["reason_code"] = "FETCH_FAILED"
+    assert direct_vm.run_validator(leader_result=mismatched_reason) is False
+    invalid_success = {
+        "ok": True,
+        "evidence_hash": digest(""),
+        "char_count": 0,
+        "reason_code": "",
+    }
+    assert direct_vm.run_validator(leader_result=invalid_success) is False
 
 
 def test_honest_approval_fills_once_and_records_provenance(direct_vm, direct_deploy):
@@ -431,15 +540,18 @@ def test_fetch_failure_is_inconclusive_not_rejection(direct_vm, direct_deploy):
     assert contract.get_submission(submission_id)["status"] == "INCONCLUSIVE"
 
 
-def test_oversized_evidence_is_not_silently_truncated(direct_vm, direct_deploy):
+def test_evaluation_detects_mutation_to_oversized_evidence(direct_vm, direct_deploy):
     oversized = "x" * 16_001
+    direct_vm.mock_web(r"evidence\.example/content", {"status": 200, "body": BODY})
+    contract = direct_deploy(CONTRACT)
+    bounty_id = post(contract, direct_vm)
+    submission_id = contract.submit_content(bounty_id, URI)
+
+    direct_vm.clear_mocks()
     direct_vm.mock_web(
         r"evidence\.example/content",
         {"status": 200, "body": oversized},
     )
-    contract = direct_deploy(CONTRACT)
-    bounty_id = post(contract, direct_vm)
-    submission_id = contract.submit_content(bounty_id, URI)
     result = contract.evaluate_submission(submission_id)
     assert result["decision"] == "INCONCLUSIVE"
     assert result["reason_code"] == "EVIDENCE_TOO_LARGE"

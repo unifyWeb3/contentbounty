@@ -1,4 +1,4 @@
-# v2.1.0
+# v2.1.1
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 import hashlib
@@ -191,10 +191,25 @@ class ContentBounty(gl.Contract):
             }
 
         normalized_content = self._normalize_evidence(rendered)
+        char_count = len(normalized_content)
+        if char_count == 0:
+            return {
+                "ok": False,
+                "evidence_hash": "",
+                "char_count": 0,
+                "reason_code": "EMPTY_EVIDENCE",
+            }
+        if char_count > MAX_EVIDENCE_CHARS:
+            return {
+                "ok": False,
+                "evidence_hash": "",
+                "char_count": char_count,
+                "reason_code": "EVIDENCE_TOO_LARGE",
+            }
         return {
             "ok": True,
             "evidence_hash": hashlib.sha256(normalized_content.encode("utf-8")).hexdigest(),
-            "char_count": len(normalized_content),
+            "char_count": char_count,
             "reason_code": "",
         }
 
@@ -210,11 +225,17 @@ class ContentBounty(gl.Contract):
         if not isinstance(result.get("reason_code"), str):
             return False
         if not result["ok"]:
-            return (
-                result["evidence_hash"] == ""
-                and result["char_count"] == 0
-                and result["reason_code"] == "FETCH_FAILED"
-            )
+            if result["evidence_hash"] != "":
+                return False
+            if result["reason_code"] == "FETCH_FAILED":
+                return result["char_count"] == 0
+            if result["reason_code"] == "EMPTY_EVIDENCE":
+                return result["char_count"] == 0
+            if result["reason_code"] == "EVIDENCE_TOO_LARGE":
+                return result["char_count"] > MAX_EVIDENCE_CHARS
+            return False
+        if not 0 < result["char_count"] <= MAX_EVIDENCE_CHARS:
+            return False
         if len(result["evidence_hash"]) != 64 or result["reason_code"] != "":
             return False
         try:
@@ -530,7 +551,7 @@ approval field; deterministic contract code derives the decision."""
 
         commitment = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         assert self._valid_evidence_commitment(commitment), "Invalid evidence commitment"
-        assert commitment["ok"], "Evidence could not be rendered during submission"
+        assert commitment["ok"], "Evidence failed submission validation: " + commitment["reason_code"]
         digest = commitment["evidence_hash"]
         evidence_key = self._evidence_key(bounty_id, digest)
         assert self.evidence_submission_ids.get(evidence_key) is None, "Evidence already submitted"

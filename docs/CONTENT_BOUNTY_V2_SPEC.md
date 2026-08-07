@@ -29,8 +29,11 @@ the former and provides a bounded grace period.
 `PENDING -> APPROVED | REJECTED | INCONCLUSIVE`
 
 - `INCONCLUSIVE` is retryable until `MAX_EVALUATION_ATTEMPTS` or the evaluation
-  deadline. Fetch failures, empty or oversized evidence, digest mismatch, and
-  model/parser failures are inconclusive rather than rejections.
+  deadline. Evaluation-time fetch failures, empty or oversized evidence, digest
+  mismatch, and model/parser failures are inconclusive rather than rejections.
+  Submission-time evidence preparation is stricter: a consensus-rendered value
+  must contain 1-16,000 normalized characters or the transaction fails before
+  any submission, creator index, or bounty lock state is written.
 - When one submission is approved, every other non-terminal submission becomes
   `SUPERSEDED`.
 - One creator and one evidence digest may each appear at most once per bounty.
@@ -51,9 +54,11 @@ Each submission stores:
 `submit_content(bounty_id, evidence_uri)` does not accept a caller-calculated
 digest. Its leader and validators independently call
 `gl.nondet.web.render(..., mode="text")`, normalize CRLF/CR to LF, remove outer
-whitespace, hash the exact UTF-8 text, and agree on the digest and character
-count before the submission is stored. A URI that cannot be rendered during
-this preparation fails submission without creating state.
+whitespace, and require 1-16,000 normalized characters. They hash the exact
+UTF-8 text and agree on the success flag, digest, character count, and failure
+reason before the submission is stored. Empty, whitespace-only, oversized, or
+unavailable evidence fails submission without creating state; retrying with a
+valid URI does not consume the creator's one-submission allowance.
 
 Evaluation independently repeats the same render and normalization and compares
 the result with the submission-time digest. Evidence over the documented size
