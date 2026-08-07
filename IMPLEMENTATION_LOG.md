@@ -717,3 +717,241 @@ curl --max-time 10 -sS -X POST -H 'content-type: application/json' \
 
 No deployment was made during this preflight. There are no new addresses or
 transaction hashes.
+
+## 2026-08-07 — injected-wallet network identity hardening
+
+### Decisions and assumptions
+
+- Inspected the official `genlayer-js` `1.1.8` chain objects and shipped
+  consensus ABIs before editing. Studionet exposes `getContracts()` at its
+  consensus main contract; Asimov and Bradbury expose `VERSION()` and
+  `getAddressManager()`.
+- A read-only Bradbury RPC probe proved that checking only selected-address code
+  and `VERSION()` is insufficient: Bradbury still has nonempty code at the
+  official Asimov consensus address, and that historical contract also returns
+  `VERSION() == 2.0.0`.
+- Every frontend write now uses a fail-closed injected-provider guard. It checks
+  `eth_chainId`, calls `eth_getCode` for the selected official consensus
+  address, and executes the official ABI's `getContracts()` or `VERSION()`
+  probe through the wallet provider.
+- For shared chain ID `4221`, the guard additionally compares the exact current
+  head height and block hash from the injected provider with the selected
+  official RPC. This detects Asimov/Bradbury history mismatch even when old
+  contracts remain deployed at both known addresses. Payable and nonpayable
+  writes share the same guard and cannot reach `writeContract` when identity is
+  ambiguous.
+- Wallet switching remains chain-ID based. Because the two public testnets
+  share `4221`, mismatch errors explicitly require the user to change the
+  wallet's chain-4221 RPC to the selected official endpoint; there is no network
+  fallback.
+- Read-only official probes found Asimov and Bradbury currently serving the
+  same chain-4221 height and block hash. Identical head state is therefore
+  treated as equivalent EVM execution state after the selected consensus
+  contract code/ABI checks; any future divergence or provider lag fails closed.
+- Residual assumption: the selected official RPC is the reference for current
+  chain history and must support browser JSON-RPC/CORS plus
+  `eth_getBlockByNumber`. Unavailability fails closed. A sufficiently deep RPC
+  compromise could defeat this comparison; the frontend does not claim a
+  cryptographic light-client proof.
+
+### Commands and results
+
+```text
+node SDK ABI/chain inspection
+=> genlayer-js lockfile version 1.1.8; Studionet consensus
+0xb7278A61aa25c888815aFC32Ad3cC52fF24fE575 with getContracts(); Asimov
+0x6CAFF6769d70824745AD895663409DC70aB5B28E and Bradbury
+0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D with VERSION()/getAddressManager()
+
+curl eth_getCode/eth_call against the official Bradbury RPC
+=> selected Bradbury consensus has 1,159 bytes of runtime code and VERSION
+2.0.0; the Asimov consensus address on Bradbury also has nonempty code and
+returns VERSION 2.0.0, confirming that code presence alone is ambiguous
+
+curl eth_getBlockByNumber(latest) against Asimov and Bradbury
+=> both returned block 0x1018acf with hash
+0x9d8817eb4ea50e7e618f6210d737599dd33da1031cc565cf443f848b04498e05;
+the endpoints currently expose identical EVM head state
+
+cd frontend && npm test -- --run src/lib/walletNetwork.test.ts
+=> PASS after the exact-head stale-provider case was added; 1 file, 11 tests
+
+cd frontend && npm run build
+=> PASS after one TypeScript narrowing correction; vue-tsc and Vite production
+build, 461 modules transformed
+```
+
+### Remaining blockers
+
+- A browser/injected-wallet smoke test on each selected network still requires
+  a deployed v2.1.1 address and explicit authorization to sign. No wallet or
+  credentials were used here.
+
+## 2026-08-07 — authoritative submission evidence bounds
+
+### Decisions and assumptions
+
+- Bumped the contract source header to `v2.1.1` without changing the public ABI.
+- Submission preparation now emits explicit failed commitments for
+  `EMPTY_EVIDENCE` and `EVIDENCE_TOO_LARGE`. A successful commitment is valid
+  only for 1-16,000 normalized characters.
+- Validators independently render and must match the leader's success flag,
+  digest, character count, and failure reason. Failed commitments are accepted
+  as substantively equivalent consensus results but then revert the submission
+  transaction before any count, creator/evidence index, allowance, or bounty
+  status mutation.
+- Evaluation retains retryable empty/oversized results for evidence that was
+  valid at submission but later mutated.
+
+### Commands and results
+
+```text
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest \
+  tests/direct/test_content_bounty.py -q -k \
+  'empty_rendered or 16000 or 16001 or retry_without or matching_invalid or submission_requires or mutation_to_oversized'
+=> PASS; 8 passed, 21 deselected
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -q
+=> PASS; 29 passed in 3.38s
+
+GENVM_SOURCE_MODE=prebuilt \
+GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 \
+npm run check:contract
+=> PASS; full lint 3/3 and semantic schema validation, 10 methods (5 view / 5 write)
+
+npm run test:evidence -- --quiet
+=> PASS; 2 passed in 0.03s
+```
+
+### Remaining blockers
+
+- Live submission consensus on the exact WebRender output remains part of the
+  external proof gate. Direct Mode proves state ordering and leader/validator
+  equivalence with controlled renderer results.
+
+## 2026-08-07 — persistent proof modes and lifecycle observation
+
+### Decisions and assumptions
+
+- `LIVE_GENLAYER_NETWORK` and `LIVE_PROOF_MODE` are both explicit requirements.
+  `persistent` accepts only `testnetBradbury` or `testnetAsimov`.
+  `studionet-smoke` accepts only Studionet and records simulated value semantics
+  with `persistentPayoutProofValid: false`.
+- Extracted live receipt classification and lifecycle observation into a pure
+  Node module. It normalizes numeric, camelCase, and snake_case fields, records
+  timestamped observations, accepts immediate successful finalization, and
+  distinguishes finalization success from a separately observed accepted phase.
+- Every successful lifecycle still requires `MAJORITY_AGREE` and
+  `FINISHED_WITH_RETURN`. Undetermined, canceled, leader/validator timeout,
+  disagreement/no-majority, and execution-error results fail closed.
+
+### Commands and results
+
+```text
+node --check scripts/live-proof-mode.mjs
+node --check scripts/live-lifecycle.mjs
+node --check tests/integration/live_consensus.mjs
+=> PASS
+
+npm run test:network
+=> PASS; network-selection and proof-mode test files
+
+npm run test:lifecycle
+=> PASS; lifecycle test file covering field normalization, immediate
+finalization, distinct acceptance/finalization, intermediate states, and
+terminal consensus/execution failures
+
+cd frontend && npm test
+=> PASS before the final exact-head case; 3 files, 43 tests
+```
+
+### Remaining external blockers
+
+- No live consensus proof was run. Persistent proof still requires funded
+  distinct deployer and creator accounts, stable approval evidence,
+  adversarial rejection evidence, a mutable evidence endpoint and mutation
+  webhook, explicit authorization to deploy/spend, and an explicit persistent
+  network selection.
+- Fabricated leader disagreement still requires an authorized validator
+  harness not exposed by the public SDK/testnets.
+
+### Deployments
+
+No deployment was made. There are no new addresses or transaction hashes.
+
+## 2026-08-07 — independent-review remediation final verification
+
+### Commits
+
+- `4f97a1a` — `fix(frontend): verify injected wallet network identity`
+- `8638dac` — `fix(contract): reject invalid evidence before locking`
+- `462f9d5` — `fix(safety): harden live proof and wallet failure gates`
+
+### Commands and exact results
+
+```text
+GENVM_SOURCE_MODE=prebuilt \
+GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 \
+npm run check:contract
+=> PASS; full lint 3/3 and semantic schema validation for ContentBounty,
+10 methods (5 view / 5 write), 0 constructor parameters
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> \
+npm run test:contract -- --quiet
+=> PASS; 29 passed in 6.03s
+
+npm run test:evidence -- --quiet
+=> PASS; 2 passed in 0.03s
+
+npm run test:network
+=> PASS; 2 Node test-file subtests (network selection plus live proof-mode
+validation), 0 failures
+
+npm run test:lifecycle
+=> PASS; 1 Node test-file subtest containing the synthetic lifecycle matrix,
+0 failures
+
+cd frontend && npm test
+=> PASS; final rerun after wallet RPC-error copy change, 3 files, 44 tests in
+3.26s
+
+cd frontend && npm run build
+=> PASS; vue-tsc and Vite 8.2.1 production build, 461 modules transformed,
+largest chunk 475.86 kB (102.15 kB gzip)
+
+node --check deploy.mjs
+node --check scripts/genlayer-network.mjs
+node --check scripts/live-proof-mode.mjs
+node --check scripts/live-lifecycle.mjs
+node --check tests/integration/live_consensus.mjs
+=> PASS
+
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+=> PASS; workflow parsed and contains semantic lint, Direct Mode, evidence,
+network/proof-mode, lifecycle, frontend tests/build, and diff checks
+
+npm run test:live
+=> EXPECTED EXTERNAL-BLOCKER FAILURE; exit code 1 before any RPC call, listing
+LIVE_GENLAYER_NETWORK, LIVE_PROOF_MODE, both funded account keys, all three
+evidence URIs, and the mutation webhook as required
+```
+
+### Remaining external proof gate
+
+- funded, distinct deployer and creator accounts;
+- stable approval evidence containing the required clear-pass facts;
+- adversarial rejection evidence for a real configured validator model;
+- a mutable evidence endpoint and HTTPS mutation webhook;
+- explicit authorization to deploy and spend;
+- `LIVE_GENLAYER_NETWORK=testnetBradbury` or `testnetAsimov` together with
+  `LIVE_PROOF_MODE=persistent`.
+
+There is still no explorer-linked v2.1.1 deployment, live accepted/finalized
+observation, real-model adversarial outcome, or finalized persistent recipient
+balance delta. The branch is ready for another independent offline review but
+is not resubmission-ready.
+
+### Deployments
+
+No deployment was made. There are no new network addresses or transaction
+hashes.

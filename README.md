@@ -96,15 +96,25 @@ digest, URI, and counts:
   --write-canonical canonical-evidence.txt
 ```
 
-Publish the generated canonical file bytes at the supplied URI. The contract's
-submission consensus remains authoritative and stores its renderer-derived
-digest; later mutation becomes an inconclusive digest mismatch.
+Publish the generated canonical file bytes at the supplied URI. Normalized
+evidence must contain 1–16,000 characters; empty, whitespace-only, or oversized
+content fails submission before any creator slot is consumed or bounty is
+locked. The contract's submission consensus remains authoritative and stores
+its renderer-derived digest; later mutation becomes an inconclusive digest
+mismatch.
 
 ## Frontend safety and finality
 
 The Vue frontend uses an injected external signer. It never asks for a private
 key and stores no wallet secret. It persists only transaction identifiers and
 observed lifecycle states.
+
+Before every write it fail-closed verifies the injected provider's selected
+consensus address, the official consensus ABI identity probe, and—because
+Asimov and Bradbury share chain ID `4221`—the exact current head height and
+block hash against the selected official RPC. A wallet that cannot be
+automatically switched must be manually configured to the selected chain-4221
+RPC; ambiguous identity blocks both payable and nonpayable writes.
 
 The UI distinguishes:
 
@@ -190,19 +200,21 @@ commit, and source SHA-256 in `IMPLEMENTATION_LOG.md`.
 
 ## Live consensus proof
 
-The opt-in integration runner deploys the current source, observes separate
-accepted and finalized receipts, exercises clear approval/rejection and mutable
-evidence failure, and verifies the finalized winner balance delta. It is never
-run by CI and requires explicit authorization plus funded keys and external
-evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
+The opt-in integration runner deploys the current source, observes lifecycle
+receipts, exercises clear approval/rejection and mutable evidence failure, and
+verifies the finalized winner balance delta. Persistent proof mode accepts only
+`testnetBradbury` or `testnetAsimov`; Studionet requires the explicit
+`LIVE_PROOF_MODE=studionet-smoke` demo mode and is never valid settlement
+evidence. It is never run by CI and requires explicit authorization plus funded
+keys and external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
 
 ## Continuous integration
 
 GitHub Actions installs the commit-pinned Python dependencies, uses the official
 GenVM `v0.2.16` source at commit
 `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, and runs full semantic lint,
-23 Direct Mode tests, evidence/network tests, 33 frontend tests, frontend
-typecheck/build, and diff checks.
+29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 44 frontend
+tests, frontend typecheck/build, and diff checks.
 
 ## License
 
