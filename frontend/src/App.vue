@@ -110,7 +110,7 @@ const postForm = ref({
   ] as CriterionDraft[],
 })
 
-const submitForm = ref({ evidenceUri: '', evidenceSha256: '' })
+const submitForm = ref({ evidenceUri: '' })
 
 const connected = computed(() => Boolean(walletAddress.value))
 const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS)
@@ -331,7 +331,7 @@ async function loadBounties() {
 
 async function selectBounty(bounty: Bounty) {
   selectedBounty.value = bounty
-  submitForm.value = { evidenceUri: '', evidenceSha256: '' }
+  submitForm.value = { evidenceUri: '' }
   await loadSubmissions(bounty.id)
 }
 
@@ -517,18 +517,16 @@ async function submitEvidence() {
   actionBusy.value = 'submit'
   try {
     const uri = submitForm.value.evidenceUri.trim()
-    const digest = submitForm.value.evidenceSha256.trim().toLowerCase()
     if (!uri.startsWith('https://')) throw new Error('Evidence must use an HTTPS URI.')
-    if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('Enter the 64-character SHA-256 of normalized rendered text.')
     const hash = await runWrite(
       'SUBMIT',
       `Submit evidence to bounty #${selectedBounty.value.id}`,
       selectedBounty.value.id,
       'submit_content',
-      [selectedBounty.value.id, uri, digest],
+      [selectedBounty.value.id, uri],
     )
     if (hash) {
-      submitForm.value = { evidenceUri: '', evidenceSha256: '' }
+      submitForm.value = { evidenceUri: '' }
       await refreshSelected()
     }
   } catch (error: any) {
@@ -715,10 +713,9 @@ onMounted(async () => {
             </div>
 
             <form v-if="['OPEN', 'LOCKED'].includes(selectedBounty.status) && Date.now() / 1000 <= selectedBounty.submission_deadline" class="evidence-form" @submit.prevent="submitEvidence">
-              <div><p class="label">Submit evidence</p><p class="hint">Commit the SHA-256 of the exact normalized text validators will render. Use a stable, preferably content-addressed HTTPS URL.</p></div>
-              <label>Evidence HTTPS URI<input v-model="submitForm.evidenceUri" type="url" maxlength="512" required placeholder="https://…" /></label>
-              <label>Normalized rendered-text SHA-256<input v-model="submitForm.evidenceSha256" class="mono" maxlength="64" minlength="64" required pattern="[0-9a-fA-F]{64}" placeholder="64 hexadecimal characters" /></label>
-              <button class="button primary" :disabled="Boolean(actionBusy)">{{ actionBusy === 'submit' ? 'Submitting…' : 'Submit committed evidence' }}</button>
+              <div><p class="label">Submit canonical evidence</p><p class="hint">Publish UTF-8 raw text at a stable, preferably content-addressed HTTPS URL. Submission consensus renders it with GenLayer, normalizes it, and stores the SHA-256—do not guess a browser or HTTP-body digest. Prepare the exact text with <code>python scripts/prepare_evidence.py --uri … --file evidence.txt</code>.</p></div>
+              <label>Raw-text evidence HTTPS URI<input v-model="submitForm.evidenceUri" type="url" maxlength="512" required placeholder="https://…/ipfs/…/evidence.txt" /></label>
+              <button class="button primary" :disabled="Boolean(actionBusy)">{{ actionBusy === 'submit' ? 'Rendering and submitting…' : 'Prepare commitment and submit' }}</button>
             </form>
 
             <div class="submissions">

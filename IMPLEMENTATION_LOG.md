@@ -387,3 +387,78 @@ env GENLAYER_NETWORK=testnetBradbury GENLAYER_DEPLOYER_PRIVATE_KEY=bad node depl
   `4221`.
 - Live deploy/finality and balance-delta evidence are still blocked on explicit
   authorization, a funded key, and a reachable selected network.
+
+## 2026-08-07 — canonical evidence preparation
+
+### Decisions and assumptions
+
+- Removed the caller-supplied digest from `submit_content`. The v2 protocol now
+  calls `submit_content(bounty_id, evidence_uri)`; its GenLayer leader and real
+  validators independently run `gl.nondet.web.render(..., mode="text")`, apply
+  the contract normalization, and must agree on success, SHA-256, character
+  count, and failure reason before storage is created.
+- The contract-generated submission digest is authoritative. Evaluation
+  rerenders and compares against that stored digest, so later content mutation
+  remains `INCONCLUSIVE/DIGEST_MISMATCH`. A URI unavailable at submission fails
+  without consuming a submission slot; evaluation-time availability remains a
+  retryable inconclusive result.
+- Defined the preparation profile `content-bounty-text-v1`: strict UTF-8 raw
+  text, CRLF/CR converted to LF, outer Unicode whitespace stripped, maximum
+  16,000 normalized characters, published at a stable, preferably
+  content-addressed HTTPS URI. HTML, browser DOM text, and ordinary HTTP bodies
+  are not claimed to be equivalent to GenLayer WebRender.
+- Added `scripts/prepare_evidence.py`, which emits the exact canonical text,
+  URI, SHA-256, character count, and UTF-8 byte count and can write the canonical
+  bytes to publish. This local helper makes preparation reproducible, while the
+  on-chain renderer consensus removes the need for users to guess its digest.
+- Added a CRLF fixture whose prepared digest is asserted in both utility tests
+  and the contract's submission/evaluation path. Direct Mode proves shared
+  normalization and control flow with a mocked renderer; it is not presented as
+  live WebRender equivalence evidence.
+- Updated the frontend to accept only the evidence URI and explain the raw-text
+  workflow. The generated on-chain digest remains visible on stored
+  submissions.
+
+### GenLayer and contract versions used
+
+- Contract source header: `v2.1.0` (submission ABI changed to contract-generated
+  evidence commitments)
+- GenVM: official `v0.2.16` at
+  `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`
+- `genlayer-test` `0.29.2`, `genvm-linter` `0.10.0`, `genlayer-py` `0.18.0`
+
+### Commands and results
+
+```text
+.venv/bin/pytest tests/unit -v  # first run
+=> FAIL during collection; GenLayer pytest import handling did not include the
+repository root, so `scripts.prepare_evidence` was not importable
+
+pyproject.toml: pythonpath = ["."]
+npm run test:evidence
+=> PASS; 2 passed in 0.04s
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -v
+=> PASS; 18 passed in 2.97s
+
+.venv/bin/genvm-lint lint contracts/content_bounty.py
+=> PASS; 3 checks
+
+GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 .venv/bin/genvm-lint check contracts/content_bounty.py --json
+=> PASS; lint 3/3 and semantic schema validation for ContentBounty (9 methods,
+4 view, 5 write, 0 constructor parameters)
+
+.venv/bin/python scripts/prepare_evidence.py --uri https://gateway.example/ipfs/bafy-content-bounty/evidence.txt --file tests/fixtures/canonical_evidence.txt --write-canonical /tmp/contentbounty-canonical-evidence.txt
+=> PASS; canonical SHA-256
+6c3cb3fd6a3bae4746f817bc82864f65a99ef05181cad4f69fb16a23038f46bd,
+44 characters, 44 UTF-8 bytes
+```
+
+### Remaining blockers
+
+- Direct Mode substitutes the configured mock body for WebRender output. The
+  fixture proves contract/preparer normalization parity but not a real browser
+  renderer. Live submission consensus on a deployed contract is still required
+  for explorer-linked WebRender evidence.
+- No live endpoint or credentials were used during the announced Studionet
+  maintenance window.

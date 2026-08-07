@@ -9,10 +9,11 @@
 </div>
 
 ContentBounty lets a poster escrow a GEN reward against a bounded, ordered
-rubric. A creator submits an HTTPS evidence URI plus the SHA-256 of its
-normalized rendered text. GenLayer leaders and validators independently fetch,
-hash, extract observations, and judge every criterion. Deterministic contract
-code—not model prose—derives the verdict and controls settlement.
+rubric. A creator submits a canonical raw-text HTTPS evidence URI. GenLayer
+leaders and validators render, normalize, and hash it during submission, then
+independently fetch, verify, extract observations, and judge every criterion at
+evaluation. Deterministic contract code—not model prose—derives the verdict and
+controls settlement.
 
 The historical v0.2 Studionet deployment is not compatible with this contract
 or frontend. No v2 deployment is claimed until a finalized address and
@@ -28,6 +29,7 @@ independent validators enforce the equivalence principle.
 ContentBounty v2 uses:
 
 - `gl.nondet.web.render` for bounded text evidence;
+- submission consensus to create the renderer-derived evidence commitment;
 - `gl.nondet.exec_prompt` for observation extraction and criterion judgment;
 - `gl.vm.run_nondet_unsafe` for an explicit independent validator policy;
 - deterministic criterion bits, score bucket, decision, and reason code;
@@ -75,6 +77,26 @@ equivalence. The model never chooses a payout amount or recipient.
 See [the v2 specification](docs/CONTENT_BOUNTY_V2_SPEC.md) and
 [implementation log](IMPLEMENTATION_LOG.md) for the complete design, commands,
 versions, results, blockers, and deployments.
+
+## Prepare evidence
+
+Use UTF-8 raw text at a stable, preferably content-addressed HTTPS URI. The
+contract derives the authoritative SHA-256 through GenLayer WebRender during
+submission, so the frontend never asks users to guess a browser-DOM or normal
+HTTP-response digest. The repository helper reproduces the contract's line
+ending and outer-whitespace normalization and emits the exact canonical text,
+digest, URI, and counts:
+
+```bash
+.venv/bin/python scripts/prepare_evidence.py \
+  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
+  --file evidence.txt \
+  --write-canonical canonical-evidence.txt
+```
+
+Publish the generated canonical file bytes at the supplied URI. The contract's
+submission consensus remains authoritative and stores its renderer-derived
+digest; later mutation becomes an inconclusive digest mismatch.
 
 ## Frontend safety and finality
 

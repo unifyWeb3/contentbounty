@@ -8,6 +8,8 @@ Contract.
 - Uses an injected external wallet only.
 - Never generates, imports, displays, or persists a private key.
 - Parses GEN amounts as exact 18-decimal integers.
+- Accepts only the evidence URI; submission consensus derives the canonical
+  GenLayer-rendered SHA-256 instead of trusting a browser-calculated digest.
 - Persists transaction identifiers and observed lifecycle states so evidence
   survives reload.
 - Separates `SUBMITTED`, `ACCEPTED`, and `FINALIZED`; it does not treat an
@@ -46,3 +48,13 @@ distinguish them by chain ID alone, so its configured RPC for chain `4221` must
 match the selected network shown in the application.
 
 The historical v0.2 address is incompatible with this frontend.
+
+Prepare evidence as UTF-8 raw text with the repository helper before publishing
+it at a stable, preferably content-addressed HTTPS URI:
+
+```bash
+.venv/bin/python scripts/prepare_evidence.py \
+  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
+  --file evidence.txt \
+  --write-canonical canonical-evidence.txt
+```

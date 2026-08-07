@@ -1,4 +1,4 @@
-# v2.0.0
+# v2.1.0
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 import hashlib
@@ -147,18 +147,12 @@ class ContentBounty(gl.Contract):
         )
         return canonical, len(canonical_criteria)
 
-    def _validate_evidence(self, evidence_uri: str, evidence_sha256: str) -> tuple[str, str]:
+    def _validate_evidence_uri(self, evidence_uri: str) -> str:
         uri = evidence_uri.strip()
-        digest = evidence_sha256.strip().lower()
         assert 0 < len(uri) <= MAX_EVIDENCE_URI_LENGTH, "Invalid evidence URI length"
         assert uri.startswith("https://"), "Evidence URI must use HTTPS"
         assert " " not in uri and "\n" not in uri and "\r" not in uri, "Evidence URI contains whitespace"
-        assert len(digest) == 64, "Evidence SHA-256 must be 64 hex characters"
-        try:
-            int(digest, 16)
-        except Exception:
-            raise gl.vm.UserError("Evidence SHA-256 must be hexadecimal")
-        return uri, digest
+        return uri
 
     def _creator_key(self, bounty_id: u256, creator: Address) -> str:
         return str(int(bounty_id)) + ":" + str(creator)
@@ -171,6 +165,58 @@ class ContentBounty(gl.Contract):
 
     def _normalize_evidence(self, content: str) -> str:
         return content.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    def _render_evidence_commitment(self, evidence_uri: str) -> dict:
+        try:
+            rendered = gl.nondet.web.render(evidence_uri, mode="text")
+        except Exception:
+            return {
+                "ok": False,
+                "evidence_hash": "",
+                "char_count": 0,
+                "reason_code": "FETCH_FAILED",
+            }
+
+        if not isinstance(rendered, str):
+            return {
+                "ok": False,
+                "evidence_hash": "",
+                "char_count": 0,
+                "reason_code": "FETCH_FAILED",
+            }
+
+        normalized_content = self._normalize_evidence(rendered)
+        return {
+            "ok": True,
+            "evidence_hash": hashlib.sha256(normalized_content.encode("utf-8")).hexdigest(),
+            "char_count": len(normalized_content),
+            "reason_code": "",
+        }
+
+    def _valid_evidence_commitment(self, result: dict) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if not isinstance(result.get("ok"), bool):
+            return False
+        if not isinstance(result.get("evidence_hash"), str):
+            return False
+        if not isinstance(result.get("char_count"), int) or result["char_count"] < 0:
+            return False
+        if not isinstance(result.get("reason_code"), str):
+            return False
+        if not result["ok"]:
+            return (
+                result["evidence_hash"] == ""
+                and result["char_count"] == 0
+                and result["reason_code"] == "FETCH_FAILED"
+            )
+        if len(result["evidence_hash"]) != 64 or result["reason_code"] != "":
+            return False
+        try:
+            int(result["evidence_hash"], 16)
+        except Exception:
+            return False
+        return True
 
     def _inconclusive_result(self, evidence_hash: str, reason_code: str, feedback: str) -> dict:
         return {
@@ -435,17 +481,41 @@ approval field; deterministic contract code derives the decision."""
         return bounty_id
 
     @gl.public.write
-    def submit_content(self, bounty_id: u256, evidence_uri: str, evidence_sha256: str) -> u256:
+    def submit_content(self, bounty_id: u256, evidence_uri: str) -> u256:
         assert int(bounty_id) < int(self.bounty_count), "Bounty does not exist"
         bounty = self.bounties[int(bounty_id)]
         assert bounty.status in (BOUNTY_OPEN, BOUNTY_LOCKED), "Bounty is not accepting submissions"
         assert self._now() <= int(bounty.submission_deadline), "Submission deadline passed"
         assert int(bounty.submission_count) < MAX_SUBMISSIONS_PER_BOUNTY, "Submission limit reached"
 
-        uri, digest = self._validate_evidence(evidence_uri, evidence_sha256)
+        uri = self._validate_evidence_uri(evidence_uri)
         creator_key = self._creator_key(bounty_id, gl.message.sender_address)
-        evidence_key = self._evidence_key(bounty_id, digest)
         assert self.creator_submission_ids.get(creator_key) is None, "Creator already submitted"
+
+        def leader_fn() -> dict:
+            return self._render_evidence_commitment(uri)
+
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            leader_data = leader_result.calldata
+            if not self._valid_evidence_commitment(leader_data):
+                return False
+            validator_data = self._render_evidence_commitment(uri)
+            if not self._valid_evidence_commitment(validator_data):
+                return False
+            return (
+                leader_data["ok"] == validator_data["ok"]
+                and leader_data["evidence_hash"] == validator_data["evidence_hash"]
+                and leader_data["char_count"] == validator_data["char_count"]
+                and leader_data["reason_code"] == validator_data["reason_code"]
+            )
+
+        commitment = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+        assert self._valid_evidence_commitment(commitment), "Invalid evidence commitment"
+        assert commitment["ok"], "Evidence could not be rendered during submission"
+        digest = commitment["evidence_hash"]
+        evidence_key = self._evidence_key(bounty_id, digest)
         assert self.evidence_submission_ids.get(evidence_key) is None, "Evidence already submitted"
 
         submission_id = self.submission_count
