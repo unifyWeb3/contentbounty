@@ -31,6 +31,8 @@ ContentBounty v2 uses:
 - `gl.nondet.web.render` for bounded text evidence;
 - submission consensus to create the renderer-derived evidence commitment;
 - `gl.nondet.exec_prompt` for observation extraction and criterion judgment;
+- single-line JSON prompt envelopes for untrusted rubric, evidence, and
+  observation values;
 - `gl.vm.run_nondet_unsafe` for an explicit independent validator policy;
 - deterministic criterion bits, score bucket, decision, and reason code;
 - finalized `emit_transfer` messages for payout or refunds.

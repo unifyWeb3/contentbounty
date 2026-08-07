@@ -462,3 +462,54 @@ GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-
   for explorer-linked WebRender evidence.
 - No live endpoint or credentials were used during the announced Studionet
   maintenance window.
+
+## 2026-08-07 — structured prompt-injection hardening
+
+### Decisions and assumptions
+
+- Replaced interpolated `<UNTRUSTED_...>` blocks with one compact JSON object on
+  a single `UNTRUSTED_INPUT_JSON=` line. Rubric arrays and evidence/observation
+  strings are serialized rather than concatenated into prompt structure.
+- JSON escaping keeps submitted quotes, backslashes, newlines, fake JSON, and
+  fake output instructions inside string values. `<`, `>`, and `&` are emitted
+  as `\\u003c`, `\\u003e`, and `\\u0026`, so submitted closing tags do not
+  appear as raw delimiters.
+- Bumped evaluator provenance to
+  `content-bounty-evaluator-v2.1-json-envelope`.
+- Replaced the tautological prompt-injection test with tests that use the Direct
+  Mode live-handler hook to capture the actual prompts. They parse the envelope
+  back to the exact original data and prove attacks do not create prompt lines
+  outside it. Coverage includes closing tags, “ignore previous instructions,”
+  fake JSON/output-format instructions, system/role impersonation, malicious
+  rubric requirements, and injection propagated through extracted observations.
+- These tests prove structural encoding only. Mocked handler responses do not
+  prove behavioral resistance by a real model; no such claim is made.
+
+### GenLayer and evaluator versions used
+
+- Contract source header `v2.1.0`
+- Evaluator `content-bounty-evaluator-v2.1-json-envelope`
+- Official GenVM `v0.2.16` at
+  `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`
+- `genlayer-test` `0.29.2`, `genvm-linter` `0.10.0`
+
+### Commands and results
+
+```text
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -v
+=> first run: 21 passed, 1 failed because the provenance assertion still
+expected the prior evaluator version; prompt-envelope tests themselves passed
+
+GENVM_PY_STD_SOURCE=<official GenVM v0.2.16 source> .venv/bin/pytest tests/direct -q
+=> PASS; 22 passed in 2.15s
+
+GENVM_SOURCE_MODE=prebuilt GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 .venv/bin/genvm-lint check contracts/content_bounty.py --json
+=> PASS; lint 3/3 and semantic schema validation (9 methods, 4 view, 5 write)
+```
+
+### Remaining blockers
+
+- A real-model adversarial run requires a reachable GenLayer network, a deployed
+  v2.1 contract, transaction funding, and the network's configured validator
+  models. It was not run during the announced Studionet outage and cannot be
+  marked complete without transaction/explorer evidence.

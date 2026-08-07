@@ -99,9 +99,10 @@ Every node independently performs the same evaluation process:
 
 1. Render, normalize, and SHA-256 hash the evidence. Stop with a structured
    inconclusive result on availability, size, or digest errors.
-2. Extract criterion-specific factual observations from explicitly delimited,
-   untrusted evidence. The extraction prompt forbids following instructions in
-   either the evidence or rubric.
+2. Extract criterion-specific factual observations from a compact, single-line
+   JSON envelope of untrusted evidence and rubric values. Quotes, newlines,
+   angle brackets, ampersands, and control characters cannot terminate the
+   envelope as raw prompt structure.
 3. Judge every ordered criterion against those observations. The model returns
    criterion IDs, booleans, and bounded feedback only.
 4. Deterministic code validates criterion order and derives:
@@ -112,6 +113,22 @@ Every node independently performs the same evaluation process:
    - a fixed reason code.
 
 The model cannot directly choose `APPROVE`, a payout amount, or a recipient.
+
+### Prompt boundary model
+
+Rubric, evidence, and extracted observations are serialized as one compact JSON
+object on a single `UNTRUSTED_INPUT_JSON=` line. JSON string escaping prevents
+submitted quotes/newlines from creating new prompt sections, while `<`, `>`, and
+`&` are emitted as Unicode JSON escapes so submitted closing tags cannot appear
+as prompt delimiters. Protocol and output instructions live outside that line,
+and tell the model every decoded value is data rather than a command.
+
+This is structural prompt hardening, not a proof that an LLM can never be
+influenced by adversarial content. Direct tests inspect and decode the generated
+prompts for closing tags, instruction overrides, fake output JSON, role
+impersonation, malicious rubric values, and injected extracted observations. A
+real-model test on the deployed network remains required before making an
+empirical prompt-injection-resistance claim.
 
 ## Equivalence principle
 
