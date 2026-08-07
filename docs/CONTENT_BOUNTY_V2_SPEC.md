@@ -1,0 +1,121 @@
+# ContentBounty v2 contract specification
+
+## Scope
+
+This specification covers the v2 Intelligent Contract and its verification
+tooling. The v0.2 deployment and frontend are historical and intentionally
+incompatible with this storage model.
+
+## Lifecycle
+
+### Bounties
+
+`OPEN -> LOCKED -> FILLED`
+
+- `OPEN`: escrow is funded and no submission exists. The poster may cancel.
+- `LOCKED`: at least one valid submission exists. Cancellation is forbidden.
+- `FILLED`: the first consensus-approved submission won and the full escrow was
+  emitted to its creator for execution on transaction finalization.
+- `CANCELLED`: an `OPEN` bounty was cancelled and refunded.
+- `EXPIRED`: the evaluation grace period ended without a winner and the escrow
+  was refunded. Expiry is permissionless.
+
+Submissions are accepted through `submission_deadline`. Existing submissions
+may be evaluated through `evaluation_deadline`. The latter must be later than
+the former and provides a bounded grace period.
+
+### Submissions
+
+`PENDING -> APPROVED | REJECTED | INCONCLUSIVE`
+
+- `INCONCLUSIVE` is retryable until `MAX_EVALUATION_ATTEMPTS` or the evaluation
+  deadline. Fetch failures, empty or oversized evidence, digest mismatch, and
+  model/parser failures are inconclusive rather than rejections.
+- When one submission is approved, every other non-terminal submission becomes
+  `SUPERSEDED`.
+- One creator and one evidence digest may each appear at most once per bounty.
+
+The winner policy is first consensus-approved submission wins. Evaluation is
+permissionless so the poster cannot suppress a candidate.
+
+## Evidence model
+
+Each submission stores:
+
+- a bounded canonical HTTPS URI;
+- a required lowercase SHA-256 digest of the normalized rendered text;
+- submission and evaluation timestamps;
+- rubric/evaluator versions, attempt count, decision fields, and reason code.
+
+Leader and validators independently render the URI, normalize line endings and
+outer whitespace, hash the complete normalized text, and compare it with the
+committed digest. Evidence over the documented size limit is not silently
+truncated; it produces `INCONCLUSIVE/EVIDENCE_TOO_LARGE`.
+
+An HTTPS URI plus digest makes mutation detectable but does not guarantee
+availability. Content-addressed HTTPS gateways (for example an IPFS gateway)
+are preferred. Availability failures remain retryable.
+
+## Rubric model
+
+The bounty stores canonical JSON containing 1-8 ordered criteria:
+
+```json
+[
+  {"id": "c1", "requirement": "The article explains GenLayer consensus."},
+  {"id": "c2", "requirement": "The article links to an official source."}
+]
+```
+
+Criterion IDs are unique and stable. Natural-language requirements are bounded.
+The contract stores a rubric version and evaluator version for provenance.
+
+## Evaluation pipeline
+
+Every node independently performs the same two-stage process:
+
+1. Render, normalize, and SHA-256 hash the evidence. Stop with a structured
+   inconclusive result on availability, size, or digest errors.
+2. Extract criterion-specific factual observations from explicitly delimited,
+   untrusted evidence. The extraction prompt forbids following instructions in
+   either the evidence or rubric.
+3. Judge every ordered criterion against those observations. The model returns
+   criterion IDs, booleans, and bounded feedback only.
+4. Deterministic code validates criterion order and derives:
+   - `criteria_bits`, such as `"101"`;
+   - `APPROVE` only when every bit is `1`;
+   - otherwise `REJECT`;
+   - a deterministic 0-4 score bucket from the number of met criteria;
+   - a fixed reason code.
+
+The model cannot directly choose `APPROVE`, a payout amount, or a recipient.
+
+## Equivalence principle
+
+The contract uses `gl.vm.run_nondet_unsafe` with explicit leader-result type and
+error checks. A validator independently reruns the complete evaluation pipeline.
+It accepts the leader only when all payout-relevant fields agree exactly:
+
+- normalized evidence SHA-256;
+- `APPROVE`, `REJECT`, or `INCONCLUSIVE` decision;
+- ordered per-criterion bit string;
+- deterministic score bucket;
+- reason code.
+
+Natural-language feedback is bounded and stored, but ignored for equivalence.
+Shape-only validation is forbidden. A well-formed fabricated approval for
+non-compliant evidence must be rejected by direct validator tests.
+
+## Settlement and finality
+
+The approved transaction marks the bounty `FILLED` and emits the full escrow to
+the winning creator using the default finalized message behavior. Contract state
+records consensus outcome, not external-chain payout confirmation. Applications
+must distinguish `ACCEPTED` from `FINALIZED` and prove payout by finalized
+execution plus recipient balance delta.
+
+## Boundedness
+
+Titles, descriptions, rubric JSON, criterion count/length, evidence URI, rendered
+evidence, feedback, submissions per bounty, and evaluation attempts are bounded.
+Read methods are page-based rather than full-state scans.
