@@ -18,14 +18,13 @@ import {
   type TransactionClassification,
   type TransactionPhase,
 } from './lib/transactionClassifier'
+import {
+  runVerifiedWalletWrite,
+  verifyInjectedWalletNetwork,
+  type EthereumProvider,
+} from './lib/walletNetwork'
 
 type Address = `0x${string}`
-
-interface EthereumProvider {
-  request(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<any>
-  on?(event: string, listener: (...args: any[]) => void): void
-  removeListener?(event: string, listener: (...args: any[]) => void): void
-}
 
 interface Bounty {
   id: number
@@ -83,7 +82,12 @@ interface TxEvidence {
 }
 
 const TX_STORAGE_KEY = 'contentbounty:v2:transactions'
-const provider = computed<EthereumProvider | undefined>(() => (window as any).ethereum)
+type InjectedEthereumProvider = EthereumProvider & {
+  on?(event: string, listener: (...args: any[]) => void): void
+  removeListener?(event: string, listener: (...args: any[]) => void): void
+}
+
+const provider = computed<InjectedEthereumProvider | undefined>(() => (window as any).ethereum)
 const readClient = createClient({ chain: NETWORK }) as any
 
 const activeView = ref<'bounties' | 'post' | 'activity' | 'transactions'>('bounties')
@@ -253,7 +257,7 @@ function writeClient() {
   }) as any
 }
 
-async function ensureWalletNetwork() {
+async function selectWalletChain() {
   if (!provider.value) throw new Error('No injected wallet was found. Install a compatible wallet extension.')
   const expected = `0x${Number(NETWORK.id).toString(16)}`
   const current = await provider.value.request({ method: 'eth_chainId' })
@@ -264,6 +268,12 @@ async function ensureWalletNetwork() {
     if (error?.code !== 4902) throw error
     await provider.value.request({ method: 'wallet_addEthereumChain', params: [walletChainParameters] })
   }
+}
+
+async function ensureWalletNetwork() {
+  await selectWalletChain()
+  if (!provider.value) throw new Error('No injected wallet was found. Install a compatible wallet extension.')
+  await verifyInjectedWalletNetwork(provider.value, NETWORK_SELECTOR, NETWORK)
 }
 
 async function connectWallet() {
@@ -392,15 +402,22 @@ async function runWrite(
     await connectWallet()
     if (!walletAddress.value) return null
   }
-  await ensureWalletNetwork()
+  const signerAddress = walletAddress.value
+  await selectWalletChain()
+  if (!provider.value) throw new Error('No injected wallet was found. Install a compatible wallet extension.')
   const client = writeClient()
-  const hash = await client.writeContract({
-    account: externalAccount(walletAddress.value),
-    address: CONTRACT_ADDRESS,
-    functionName,
-    args,
-    value,
-  }) as string
+  const hash = await runVerifiedWalletWrite({
+    provider: provider.value,
+    networkSelector: NETWORK_SELECTOR,
+    chain: NETWORK,
+    write: () => client.writeContract({
+      account: externalAccount(signerAddress),
+      address: CONTRACT_ADDRESS,
+      functionName,
+      args,
+      value,
+    }) as Promise<string>,
+  })
 
   upsertTransaction({ hash, action, entityId, label, submittedAt: Date.now(), phase: 'SUBMITTED' })
   showNotice(`${label} submitted. Waiting for consensus acceptance.`)
@@ -722,7 +739,7 @@ onMounted(async () => {
             </div>
 
             <form v-if="['OPEN', 'LOCKED'].includes(selectedBounty.status) && Date.now() / 1000 <= selectedBounty.submission_deadline" class="evidence-form" @submit.prevent="submitEvidence">
-              <div><p class="label">Submit canonical evidence</p><p class="hint">Publish UTF-8 raw text at a stable, preferably content-addressed HTTPS URL. Submission consensus renders it with GenLayer, normalizes it, and stores the SHA-256—do not guess a browser or HTTP-body digest. Prepare the exact text with <code>python scripts/prepare_evidence.py --uri … --file evidence.txt</code>.</p></div>
+              <div><p class="label">Submit canonical evidence</p><p class="hint">Publish UTF-8 raw text at a stable, preferably content-addressed HTTPS URL. After CRLF/CR conversion and outer-whitespace trimming, it must contain 1–16,000 characters. Submission consensus renders it with GenLayer, normalizes it, and stores the SHA-256—do not guess a browser or HTTP-body digest. Prepare the exact text with <code>python scripts/prepare_evidence.py --uri … --file evidence.txt</code>.</p></div>
               <label>Raw-text evidence HTTPS URI<input v-model="submitForm.evidenceUri" type="url" maxlength="512" required placeholder="https://…/ipfs/…/evidence.txt" /></label>
               <button class="button primary" :disabled="Boolean(actionBusy)">{{ actionBusy === 'submit' ? 'Rendering and submitting…' : 'Prepare commitment and submit' }}</button>
             </form>
