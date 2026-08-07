@@ -12,8 +12,10 @@ export interface WalletNetworkVerification {
   consensusAddress: string
   consensusProbe: 'VERSION' | 'getContracts'
   consensusVersion?: string
+  referenceConsensusVersion?: string
   comparedBlockNumber?: string
   comparedBlockHash?: string
+  comparedHeadLag?: string
 }
 
 export class WalletNetworkPreflightError extends Error {
@@ -23,6 +25,7 @@ export class WalletNetworkPreflightError extends Error {
       | 'CONSENSUS_CODE_MISSING'
       | 'CONSENSUS_PROBE_FAILED'
       | 'AMBIGUOUS_SHARED_CHAIN'
+      | 'CONSENSUS_IDENTITY_MISMATCH'
       | 'RPC_FAILURE',
     message: string,
   ) {
@@ -32,6 +35,10 @@ export class WalletNetworkPreflightError extends Error {
 }
 
 const SHARED_TESTNET_CHAIN_ID = 4221
+/** Maximum accepted head difference while two RPCs are sampled. */
+export const MAX_SHARED_CHAIN_HEAD_LAG = 3n
+/** Confirmations left behind both sampled heads before comparing identity. */
+export const SHARED_CHAIN_CONFIRMATION_MARGIN = 2n
 
 function expectedChainId(chain: GenLayerChain) {
   return `0x${Number(chain.id).toString(16)}`
@@ -95,6 +102,9 @@ export function createSelectedNetworkRpcRequest(
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const body = await response.json() as { result?: unknown; error?: { message?: string } }
+    if (!body || typeof body !== 'object' || (!Object.prototype.hasOwnProperty.call(body, 'result') && !body.error)) {
+      throw new Error('malformed JSON-RPC response')
+    }
     if (body.error) throw new Error(body.error.message || 'JSON-RPC error')
     return body.result
   }
@@ -138,6 +148,23 @@ function validateConsensusProbeResult(
   return undefined
 }
 
+async function officialRequest(
+  request: RpcRequest,
+  method: string,
+  params: unknown[] | undefined,
+  networkSelector: string,
+): Promise<unknown> {
+  try {
+    return await request(method, params)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new WalletNetworkPreflightError(
+      'RPC_FAILURE',
+      `The official ${networkSelector} RPC could not complete ${method}: ${detail}. No transaction was sent.`,
+    )
+  }
+}
+
 async function verifySharedChainHistory(
   provider: EthereumProvider,
   networkSelector: string,
@@ -147,30 +174,41 @@ async function verifySharedChainHistory(
   try {
     const [walletHeightValue, referenceHeightValue] = await Promise.all([
       providerRequest(provider, 'eth_blockNumber', undefined, networkSelector),
-      referenceRequest('eth_blockNumber'),
+      officialRequest(referenceRequest, 'eth_blockNumber', undefined, networkSelector),
     ])
     const walletHeight = parseHexQuantity(walletHeightValue, 'Injected wallet eth_blockNumber')
     const referenceHeight = parseHexQuantity(referenceHeightValue, 'Selected network eth_blockNumber')
-    if (walletHeight !== referenceHeight) {
+    const headLag = walletHeight > referenceHeight
+      ? walletHeight - referenceHeight
+      : referenceHeight - walletHeight
+    if (headLag > MAX_SHARED_CHAIN_HEAD_LAG) {
       throw new WalletNetworkPreflightError(
         'AMBIGUOUS_SHARED_CHAIN',
-        `The wallet's chain-4221 head (${walletHeight}) does not exactly match the selected ${networkSelector} RPC head (${referenceHeight}). ${sharedChainInstruction(networkSelector, chain)}`,
+        `The wallet and selected ${networkSelector} RPC heads differ by ${headLag} blocks, exceeding the permitted lag of ${MAX_SHARED_CHAIN_HEAD_LAG}. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
-    const blockNumber = `0x${walletHeight.toString(16)}`
+    const minimumHeight = walletHeight < referenceHeight ? walletHeight : referenceHeight
+    if (minimumHeight < SHARED_CHAIN_CONFIRMATION_MARGIN) {
+      throw new WalletNetworkPreflightError(
+        'AMBIGUOUS_SHARED_CHAIN',
+        `The wallet and selected ${networkSelector} RPC are too close to genesis for a stable comparison. ${sharedChainInstruction(networkSelector, chain)}`,
+      )
+    }
+    const stableHeight = minimumHeight - SHARED_CHAIN_CONFIRMATION_MARGIN
+    const blockNumber = `0x${stableHeight.toString(16)}`
     const [walletBlock, referenceBlock] = await Promise.all([
       providerRequest(provider, 'eth_getBlockByNumber', [blockNumber, false], networkSelector),
-      referenceRequest('eth_getBlockByNumber', [blockNumber, false]),
+      officialRequest(referenceRequest, 'eth_getBlockByNumber', [blockNumber, false], networkSelector),
     ])
     const walletHash = blockHash(walletBlock, 'Injected wallet eth_getBlockByNumber')
     const referenceHash = blockHash(referenceBlock, 'Selected network eth_getBlockByNumber')
     if (walletHash !== referenceHash) {
       throw new WalletNetworkPreflightError(
         'AMBIGUOUS_SHARED_CHAIN',
-        `The wallet reports chain ID 4221, but its recent block history does not match ${networkSelector}. ${sharedChainInstruction(networkSelector, chain)}`,
+        `The wallet and selected ${networkSelector} RPC disagree at stable block ${blockNumber}. Identical chain history is treated as equivalent execution state because the wallet RPC URL is unavailable. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
-    return { blockNumber, blockHash: walletHash }
+    return { blockNumber, blockHash: walletHash, headLag: headLag.toString() }
   } catch (error) {
     if (error instanceof WalletNetworkPreflightError) throw error
     const detail = error instanceof Error ? error.message : String(error)
@@ -178,6 +216,50 @@ async function verifySharedChainHistory(
       'AMBIGUOUS_SHARED_CHAIN',
       `The wallet's chain-4221 RPC could not be distinguished as ${networkSelector}: ${detail}. ${sharedChainInstruction(networkSelector, chain)}`,
     )
+  }
+}
+
+async function readConsensusIdentity(
+  requester: (method: string, params?: unknown[]) => Promise<unknown>,
+  networkSelector: string,
+  chain: GenLayerChain,
+  blockTag: string,
+  sourceLabel: string,
+) {
+  const consensusAddress = chain.consensusMainContract!.address
+  const probe = consensusProbe(chain)
+  const code = await requester('eth_getCode', [consensusAddress, blockTag])
+  if (!isNonemptyCode(code)) {
+    throw new WalletNetworkPreflightError(
+      sourceLabel === 'injected' ? 'CONSENSUS_CODE_MISSING' : 'CONSENSUS_IDENTITY_MISMATCH',
+      `${sourceLabel === 'injected' ? 'No deployed code was found' : 'The official RPC returned no deployed code'} at the official ${networkSelector} consensus contract ${consensusAddress} at ${blockTag}. ${sharedChainInstruction(networkSelector, chain)}`,
+    )
+  }
+  const probeResult = await requester(
+    'eth_call',
+    [{ to: consensusAddress, data: probe.data }, blockTag],
+  )
+  let consensusVersion: string | undefined
+  try {
+    consensusVersion = validateConsensusProbeResult(chain, probe.functionName, probeResult)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new WalletNetworkPreflightError(
+      sourceLabel === 'injected' ? 'CONSENSUS_PROBE_FAILED' : 'CONSENSUS_IDENTITY_MISMATCH',
+      `The ${sourceLabel} ${networkSelector} consensus contract failed the official ${probe.functionName} ABI probe at ${blockTag}: ${detail}. No transaction was sent.`,
+    )
+  }
+  const normalizedProbeResult = normalizeHex(probeResult)
+  if (!/^0x[0-9a-f]+$/.test(normalizedProbeResult) || normalizedProbeResult === '0x') {
+    throw new WalletNetworkPreflightError(
+      sourceLabel === 'injected' ? 'CONSENSUS_PROBE_FAILED' : 'CONSENSUS_IDENTITY_MISMATCH',
+      `The ${sourceLabel} ${networkSelector} consensus ABI probe returned malformed data at ${blockTag}. No transaction was sent.`,
+    )
+  }
+  return {
+    code: normalizeHex(code),
+    probeResult: normalizedProbeResult,
+    consensusVersion,
   }
 }
 
@@ -203,46 +285,10 @@ export async function verifyInjectedWalletNetwork(
       `The selected ${networkSelector} SDK chain has no consensus contract. No transaction was sent.`,
     )
   }
-  const code = await providerRequest(
-    provider,
-    'eth_getCode',
-    [consensusAddress, 'latest'],
-    networkSelector,
-  )
-  if (!isNonemptyCode(code)) {
-    const instruction = chain.id === SHARED_TESTNET_CHAIN_ID
-      ? ` ${sharedChainInstruction(networkSelector, chain)}`
-      : ' Switch the wallet to the configured GenLayer network and retry.'
-    throw new WalletNetworkPreflightError(
-      'CONSENSUS_CODE_MISSING',
-      `No deployed code was found at the official ${networkSelector} consensus contract ${consensusAddress}.${instruction}`,
-    )
-  }
-
-  const probe = consensusProbe(chain)
-  let consensusVersion: string | undefined
-  try {
-    const probeResult = await providerRequest(
-      provider,
-      'eth_call',
-      [{ to: consensusAddress, data: probe.data }, 'latest'],
-      networkSelector,
-    )
-    consensusVersion = validateConsensusProbeResult(chain, probe.functionName, probeResult)
-  } catch (error) {
-    if (error instanceof WalletNetworkPreflightError && error.code === 'RPC_FAILURE') throw error
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new WalletNetworkPreflightError(
-      'CONSENSUS_PROBE_FAILED',
-      `The contract at ${consensusAddress} did not pass the official ${probe.functionName} ABI probe for ${networkSelector}: ${detail}. No transaction was sent.`,
-    )
-  }
-
   const verification: WalletNetworkVerification = {
     chainId: current,
     consensusAddress,
-    consensusProbe: probe.functionName,
-    consensusVersion,
+    consensusProbe: consensusProbe(chain).functionName,
   }
   if (chain.id === SHARED_TESTNET_CHAIN_ID) {
     const comparison = await verifySharedChainHistory(
@@ -251,8 +297,46 @@ export async function verifyInjectedWalletNetwork(
       chain,
       referenceRequest,
     )
+    const walletIdentity = await readConsensusIdentity(
+      (method, params) => providerRequest(provider, method, params, networkSelector),
+      networkSelector,
+      chain,
+      comparison.blockNumber,
+      'injected',
+    )
+    const officialIdentity = await readConsensusIdentity(
+      (method, params) => officialRequest(referenceRequest, method, params, networkSelector),
+      networkSelector,
+      chain,
+      comparison.blockNumber,
+      'official',
+    )
+    if (walletIdentity.code !== officialIdentity.code) {
+      throw new WalletNetworkPreflightError(
+        'CONSENSUS_IDENTITY_MISMATCH',
+        `The wallet's Bradbury consensus bytecode does not match the official Bradbury RPC at stable block ${comparison.blockNumber}. Identical chain history is treated as equivalent execution state only when this contract identity also matches. ${sharedChainInstruction(networkSelector, chain)}`,
+      )
+    }
+    if (walletIdentity.probeResult !== officialIdentity.probeResult) {
+      throw new WalletNetworkPreflightError(
+        'CONSENSUS_IDENTITY_MISMATCH',
+        `The wallet's Bradbury consensus ABI probe does not match the official Bradbury RPC at stable block ${comparison.blockNumber}. ${sharedChainInstruction(networkSelector, chain)}`,
+      )
+    }
+    verification.consensusVersion = walletIdentity.consensusVersion
+    verification.referenceConsensusVersion = officialIdentity.consensusVersion
     verification.comparedBlockNumber = comparison.blockNumber
     verification.comparedBlockHash = comparison.blockHash
+    verification.comparedHeadLag = comparison.headLag
+  } else {
+    const identity = await readConsensusIdentity(
+      (method, params) => providerRequest(provider, method, params, networkSelector),
+      networkSelector,
+      chain,
+      'latest',
+      'injected',
+    )
+    verification.consensusVersion = identity.consensusVersion
   }
   return verification
 }

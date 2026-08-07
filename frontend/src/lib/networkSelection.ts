@@ -1,10 +1,9 @@
-import { studionet, testnetAsimov, testnetBradbury } from 'genlayer-js/chains'
+import { studionet, testnetBradbury } from 'genlayer-js/chains'
 
 export const DEFAULT_GENLAYER_NETWORK = 'studionet'
 
 export const SUPPORTED_GENLAYER_NETWORKS = {
   studionet,
-  testnetAsimov,
   testnetBradbury,
 } as const
 

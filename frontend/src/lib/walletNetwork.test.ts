@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { encodeFunctionResult, type Abi } from 'viem'
-import { studionet, testnetAsimov, testnetBradbury } from 'genlayer-js/chains'
+import { studionet, testnetBradbury } from 'genlayer-js/chains'
 import type { GenLayerChain } from 'genlayer-js/types'
 import {
+  MAX_SHARED_CHAIN_HEAD_LAG,
   runVerifiedWalletWrite,
+  SHARED_CHAIN_CONFIRMATION_MARGIN,
   verifyInjectedWalletNetwork,
   type EthereumProvider,
   type RpcRequest,
@@ -11,6 +13,7 @@ import {
 
 const blockHash = `0x${'ab'.repeat(32)}`
 const otherBlockHash = `0x${'cd'.repeat(32)}`
+const stableTag = `0x${(0x20n - SHARED_CHAIN_CONFIRMATION_MARGIN).toString(16)}`
 
 function consensusCallResult(chain: GenLayerChain): string {
   const abi = chain.consensusMainContract!.abi as Abi
@@ -21,35 +24,46 @@ function consensusCallResult(chain: GenLayerChain): string {
   return `0x${Array.from({ length: 8 }, (_item, index) => addressWord((index + 1).toString(16))).join('')}`
 }
 
-function providerFor(chain: GenLayerChain, options: {
+type ProviderOptions = {
   chainId?: string
+  height?: string
   code?: string
-  block?: string
+  probe?: string
+  blockHash?: string | ((tag: string) => string)
   failMethod?: string
-} = {}): EthereumProvider {
+}
+
+function responseFor(value: string | ((tag: string) => string) | undefined, tag: string, fallback: string) {
+  return typeof value === 'function' ? value(tag) : value ?? fallback
+}
+
+function providerFor(chain: GenLayerChain, options: ProviderOptions = {}): EthereumProvider {
   return {
     async request({ method, params }) {
       if (options.failMethod === method) throw new Error(`${method} unavailable`)
       if (method === 'eth_chainId') return options.chainId ?? `0x${chain.id.toString(16)}`
-      if (method === 'eth_getCode') {
-        expect(params?.[0]).toBe(chain.consensusMainContract!.address)
-        return options.code ?? '0x60006000'
+      if (method === 'eth_blockNumber') return options.height ?? '0x20'
+      if (method === 'eth_getBlockByNumber') {
+        const tag = String(params?.[0] ?? '')
+        return { hash: responseFor(options.blockHash, tag, blockHash) }
       }
-      if (method === 'eth_call') {
-        expect((params?.[0] as { to: string }).to).toBe(chain.consensusMainContract!.address)
-        return consensusCallResult(chain)
-      }
-      if (method === 'eth_blockNumber') return '0x20'
-      if (method === 'eth_getBlockByNumber') return { hash: options.block ?? blockHash }
+      if (method === 'eth_getCode') return options.code ?? '0x60006000'
+      if (method === 'eth_call') return options.probe ?? consensusCallResult(chain)
       throw new Error(`Unexpected provider method ${method}`)
     },
   }
 }
 
-function referenceFor(hash = blockHash, height = '0x20'): RpcRequest {
-  return vi.fn(async (method) => {
-    if (method === 'eth_blockNumber') return height
-    if (method === 'eth_getBlockByNumber') return { hash }
+function referenceFor(chain: GenLayerChain, options: ProviderOptions = {}): RpcRequest {
+  return vi.fn(async (method, params = []) => {
+    if (options.failMethod === method) throw new Error(`${method} unavailable`)
+    if (method === 'eth_blockNumber') return options.height ?? '0x20'
+    if (method === 'eth_getBlockByNumber') {
+      const tag = String(params[0] ?? '')
+      return { hash: responseFor(options.blockHash, tag, blockHash) }
+    }
+    if (method === 'eth_getCode') return options.code ?? '0x60006000'
+    if (method === 'eth_call') return options.probe ?? consensusCallResult(chain)
     throw new Error(`Unexpected reference method ${method}`)
   })
 }
@@ -60,7 +74,7 @@ describe('verifyInjectedWalletNetwork', () => {
       providerFor(studionet),
       'studionet',
       studionet,
-      referenceFor(),
+      referenceFor(studionet),
     )).resolves.toMatchObject({
       chainId: '0xf22f',
       consensusAddress: studionet.consensusMainContract!.address,
@@ -68,23 +82,134 @@ describe('verifyInjectedWalletNetwork', () => {
     })
   })
 
-  it.each([
-    ['testnetAsimov', testnetAsimov],
-    ['testnetBradbury', testnetBradbury],
-  ] as const)('verifies a correct %s provider with shared-chain history', async (name, chain) => {
+  it('verifies equal Bradbury heads at a confirmed common block', async () => {
     await expect(verifyInjectedWalletNetwork(
-      providerFor(chain),
-      name,
-      chain,
-      referenceFor(),
+      providerFor(testnetBradbury),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury),
     )).resolves.toMatchObject({
       chainId: '0x107d',
-      consensusAddress: chain.consensusMainContract!.address,
+      consensusAddress: testnetBradbury.consensusMainContract!.address,
       consensusProbe: 'VERSION',
       consensusVersion: '2.0.0',
-      comparedBlockNumber: '0x20',
+      referenceConsensusVersion: '2.0.0',
+      comparedBlockNumber: stableTag,
       comparedBlockHash: blockHash,
+      comparedHeadLag: '0',
     })
+  })
+
+  it.each([
+    ['wallet one block behind', '0x1f', '0x20'],
+    ['wallet a few blocks behind', '0x1d', '0x20'],
+    ['reference one block behind', '0x20', '0x1f'],
+    ['reference a few blocks behind', '0x20', '0x1d'],
+  ])('accepts %s within the permitted lag', async (_label, walletHeight, referenceHeight) => {
+    const wallet = providerFor(testnetBradbury, { height: walletHeight })
+    const reference = referenceFor(testnetBradbury, { height: referenceHeight })
+    await expect(verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, reference))
+      .resolves.toMatchObject({ comparedHeadLag: expect.any(String) })
+  })
+
+  it('handles a block produced between the two head requests by comparing the stable block', async () => {
+    const wallet = providerFor(testnetBradbury, {
+      height: '0x20',
+      blockHash: (tag) => tag === stableTag ? blockHash : otherBlockHash,
+    })
+    const reference = referenceFor(testnetBradbury, {
+      height: '0x21',
+      blockHash: (tag) => tag === stableTag ? blockHash : `0x${'ef'.repeat(32)}`,
+    })
+    await expect(verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, reference))
+      .resolves.toMatchObject({ comparedBlockNumber: stableTag, comparedBlockHash: blockHash })
+  })
+
+  it('uses the stable block tag for both consensus identity probes', async () => {
+    const walletCalls: Array<{ method: string; params?: unknown[] }> = []
+    const referenceCalls: Array<{ method: string; params?: unknown[] }> = []
+    const wallet = providerFor(testnetBradbury)
+    const originalWalletRequest = wallet.request.bind(wallet)
+    wallet.request = async (args) => {
+      walletCalls.push({
+        method: args.method,
+        params: Array.isArray(args.params) ? args.params : undefined,
+      })
+      return originalWalletRequest(args)
+    }
+    const reference = referenceFor(testnetBradbury)
+    const originalReference = reference
+    const observedReference = vi.fn(async (method: string, params: unknown[] = []) => {
+      referenceCalls.push({ method, params })
+      return originalReference(method, params)
+    })
+    await verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, observedReference)
+    expect(walletCalls.filter((call) => ['eth_getCode', 'eth_call'].includes(call.method)).every((call) => {
+      const params = call.params ?? []
+      return params[params.length - 1] === stableTag
+    })).toBe(true)
+    expect(referenceCalls.filter((call) => ['eth_getCode', 'eth_call'].includes(call.method)).every((call) => {
+      const params = call.params ?? []
+      return params[params.length - 1] === stableTag
+    })).toBe(true)
+  })
+
+  it('rejects excessive head lag', async () => {
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury, { height: '0x20' }),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { height: `0x${(0x20n + MAX_SHARED_CHAIN_HEAD_LAG + 1n).toString(16)}` }),
+    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN', message: expect.stringContaining('exceeding') })
+  })
+
+  it('rejects matching heights with different block hashes', async () => {
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury, { blockHash: blockHash }),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { blockHash: otherBlockHash }),
+    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN' })
+  })
+
+  it('rejects different hashes at the stable common block', async () => {
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury, { blockHash: (tag) => tag === stableTag ? blockHash : otherBlockHash }),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { blockHash: () => otherBlockHash }),
+    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN', message: expect.stringContaining('stable block') })
+  })
+
+  it('rejects a Bradbury consensus bytecode mismatch', async () => {
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { code: '0x60016001' }),
+    )).rejects.toMatchObject({ code: 'CONSENSUS_IDENTITY_MISMATCH', message: expect.stringContaining('bytecode') })
+  })
+
+  it('rejects a Bradbury ABI probe mismatch', async () => {
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { probe: encodeFunctionResult({ abi: testnetBradbury.consensusMainContract!.abi as Abi, functionName: 'VERSION', result: '9.9.9' }) }),
+    )).rejects.toMatchObject({ code: 'CONSENSUS_IDENTITY_MISMATCH', message: expect.stringContaining('ABI probe') })
+  })
+
+  it('fails closed on a malformed official JSON-RPC result', async () => {
+    const malformedReference: RpcRequest = async (method) => {
+      if (method === 'eth_blockNumber') return {}
+      return { hash: blockHash }
+    }
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury),
+      'testnetBradbury',
+      testnetBradbury,
+      malformedReference,
+    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN' })
   })
 
   it('rejects a chain ID mismatch', async () => {
@@ -92,53 +217,35 @@ describe('verifyInjectedWalletNetwork', () => {
       providerFor(studionet, { chainId: '0x1' }),
       'studionet',
       studionet,
-      referenceFor(),
+      referenceFor(studionet),
     )).rejects.toMatchObject({ code: 'CHAIN_ID_MISMATCH' })
   })
 
-  it('rejects a shared chain ID when the selected consensus contract is missing', async () => {
+  it('rejects a missing selected consensus contract', async () => {
     await expect(verifyInjectedWalletNetwork(
       providerFor(testnetBradbury, { code: '0x' }),
       'testnetBradbury',
       testnetBradbury,
-      referenceFor(),
-    )).rejects.toMatchObject({
-      code: 'CONSENSUS_CODE_MISSING',
-      message: expect.stringContaining("Change the wallet's chain-4221 RPC"),
-    })
+      referenceFor(testnetBradbury),
+    )).rejects.toMatchObject({ code: 'CONSENSUS_CODE_MISSING' })
   })
 
-  it.each(['eth_getCode', 'eth_call'])('fails closed when provider %s lookup fails', async (failMethod) => {
+  it.each(['eth_blockNumber', 'eth_getBlockByNumber', 'eth_getCode', 'eth_call'])('fails closed when wallet %s fails', async (failMethod) => {
     await expect(verifyInjectedWalletNetwork(
-      providerFor(testnetAsimov, { failMethod }),
-      'testnetAsimov',
-      testnetAsimov,
-      referenceFor(),
+      providerFor(testnetBradbury, { failMethod }),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury),
     )).rejects.toMatchObject({ code: 'RPC_FAILURE' })
   })
 
-  it('rejects the wrong chain-4221 RPC even if the selected consensus address has code', async () => {
-    await expect(verifyInjectedWalletNetwork(
-      providerFor(testnetAsimov, { block: otherBlockHash }),
-      'testnetAsimov',
-      testnetAsimov,
-      referenceFor(blockHash),
-    )).rejects.toMatchObject({
-      code: 'AMBIGUOUS_SHARED_CHAIN',
-      message: expect.stringContaining("Change the wallet's chain-4221 RPC"),
-    })
-  })
-
-  it('rejects a stale chain-4221 provider instead of comparing a pre-divergence block', async () => {
+  it.each(['eth_blockNumber', 'eth_getBlockByNumber', 'eth_getCode', 'eth_call'])('fails closed when official %s fails', async (failMethod) => {
     await expect(verifyInjectedWalletNetwork(
       providerFor(testnetBradbury),
       'testnetBradbury',
       testnetBradbury,
-      referenceFor(blockHash, '0x21'),
-    )).rejects.toMatchObject({
-      code: 'AMBIGUOUS_SHARED_CHAIN',
-      message: expect.stringContaining('does not exactly match'),
-    })
+      referenceFor(testnetBradbury, { failMethod }),
+    )).rejects.toMatchObject({ code: 'RPC_FAILURE' })
   })
 })
 
@@ -149,10 +256,10 @@ describe('runVerifiedWalletWrite', () => {
   ] as const)('blocks a %s write before writeContract when identity is ambiguous', async (_label, value) => {
     const writeContract = vi.fn(async (_request: { value: bigint }) => '0xtransaction')
     await expect(runVerifiedWalletWrite({
-      provider: providerFor(testnetBradbury, { block: otherBlockHash }),
+      provider: providerFor(testnetBradbury, { blockHash: () => otherBlockHash }),
       networkSelector: 'testnetBradbury',
       chain: testnetBradbury,
-      referenceRequest: referenceFor(blockHash),
+      referenceRequest: referenceFor(testnetBradbury),
       write: () => writeContract({ value }),
     })).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN' })
     expect(writeContract).not.toHaveBeenCalled()

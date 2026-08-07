@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { studionet, testnetAsimov, testnetBradbury } from 'genlayer-js/chains'
+import { studionet, testnetBradbury } from 'genlayer-js/chains'
 import {
   DEFAULT_GENLAYER_NETWORK,
   SUPPORTED_GENLAYER_NETWORKS,
@@ -14,7 +14,6 @@ describe('selectGenLayerNetwork', () => {
 
   it.each([
     ['studionet', studionet],
-    ['testnetAsimov', testnetAsimov],
     ['testnetBradbury', testnetBradbury],
   ] as const)('returns the complete official %s chain object', (name, chain) => {
     const selected = selectGenLayerNetwork(name)
@@ -27,13 +26,13 @@ describe('selectGenLayerNetwork', () => {
   it('rejects unsupported or differently-cased selectors', () => {
     expect(() => selectGenLayerNetwork('localnet')).toThrow('Unsupported GenLayer network')
     expect(() => selectGenLayerNetwork('Studionet')).toThrow('Unsupported GenLayer network')
+    expect(() => selectGenLayerNetwork('testnetAsimov')).toThrow('Unsupported GenLayer network')
   })
 
-  it('does not collapse Asimov and Bradbury just because their chain IDs match', () => {
-    const asimov = selectGenLayerNetwork('testnetAsimov').chain
+  it('retains the official Bradbury execution configuration', () => {
     const bradbury = selectGenLayerNetwork('testnetBradbury').chain
-    expect(asimov.id).toBe(bradbury.id)
-    expect(asimov.rpcUrls.default.http[0]).not.toBe(bradbury.rpcUrls.default.http[0])
-    expect(asimov.consensusMainContract.address).not.toBe(bradbury.consensusMainContract.address)
+    expect(bradbury.id).toBe(4221)
+    expect(bradbury.rpcUrls.default.http[0]).toBe('https://rpc-bradbury.genlayer.com')
+    expect(bradbury.consensusMainContract.address).toBe('0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D')
   })
 })
