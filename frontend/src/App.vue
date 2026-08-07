@@ -260,7 +260,12 @@ function writeClient() {
 async function selectWalletChain() {
   if (!provider.value) throw new Error('No injected wallet was found. Install a compatible wallet extension.')
   const expected = `0x${Number(NETWORK.id).toString(16)}`
-  const current = await provider.value.request({ method: 'eth_chainId' })
+  let current: unknown
+  try {
+    current = await provider.value.request({ method: 'eth_chainId' })
+  } catch (error: any) {
+    throw new Error(`Could not verify the wallet network before signing: ${error?.message ?? String(error)}. No transaction was sent.`)
+  }
   if (String(current).toLowerCase() === expected.toLowerCase()) return
   try {
     await provider.value.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: expected }] })

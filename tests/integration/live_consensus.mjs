@@ -3,10 +3,13 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createAccount, createClient } from 'genlayer-js'
-import { ExecutionResult, TransactionResult, TransactionStatus } from 'genlayer-js/types'
 import { selectGenLayerNetwork } from '../../scripts/genlayer-network.mjs'
+import { waitForLiveLifecycle } from '../../scripts/live-lifecycle.mjs'
+import { selectLiveProofMode } from '../../scripts/live-proof-mode.mjs'
 
 const requiredNames = [
+  'LIVE_GENLAYER_NETWORK',
+  'LIVE_PROOF_MODE',
   'LIVE_DEPLOYER_PRIVATE_KEY',
   'LIVE_CREATOR_PRIVATE_KEY',
   'LIVE_APPROVE_EVIDENCE_URI',
@@ -30,34 +33,6 @@ function requiredEnvironment() {
   }
 }
 
-function receiptName(receipt, camel, snake) {
-  return String(receipt?.[camel] ?? receipt?.[snake] ?? '').trim().toUpperCase()
-}
-
-function classifyReceipt(receipt) {
-  return {
-    statusName: receiptName(receipt, 'statusName', 'status_name'),
-    resultName: receiptName(receipt, 'resultName', 'result_name'),
-    executionResultName: receiptName(
-      receipt,
-      'txExecutionResultName',
-      'tx_execution_result_name',
-    ),
-  }
-}
-
-function assertSuccessful(summary, expectedStatus, label) {
-  if (
-    summary.statusName !== expectedStatus
-    || summary.resultName !== TransactionResult.MAJORITY_AGREE
-    || summary.executionResultName !== ExecutionResult.FINISHED_WITH_RETURN
-  ) {
-    throw new Error(
-      `${label} failed classification: status=${summary.statusName || 'UNKNOWN'}, consensus=${summary.resultName || 'UNKNOWN'}, execution=${summary.executionResultName || 'UNKNOWN'}`,
-    )
-  }
-}
-
 function explorerBase(chain) {
   return chain.blockExplorers.default.url.replace(/\/$/, '')
 }
@@ -71,31 +46,29 @@ function proofJson(value) {
 }
 
 async function waitLifecycle(client, hash, label, chain, proof) {
-  const acceptedReceipt = await client.waitForTransactionReceipt({
-    hash,
-    status: TransactionStatus.ACCEPTED,
-    retries: 180,
-    interval: 3000,
-  })
-  const accepted = classifyReceipt(acceptedReceipt)
-  assertSuccessful(accepted, TransactionStatus.ACCEPTED, `${label} acceptance`)
-
-  const finalizedReceipt = await client.waitForTransactionReceipt({
-    hash,
-    status: TransactionStatus.FINALIZED,
-    retries: 360,
-    interval: 5000,
-  })
-  const finalized = classifyReceipt(finalizedReceipt)
-  assertSuccessful(finalized, TransactionStatus.FINALIZED, `${label} finalization`)
-  proof.transactions.push({
+  const transactionProof = {
     label,
     hash,
     explorer: `${explorerBase(chain)}/tx/${hash}`,
-    accepted,
-    finalized,
+    observations: [],
+    acceptedPhaseObserved: false,
+    successfulFinalizationObserved: false,
+    separateAcceptedAndFinalizedObservations: false,
+  }
+  proof.transactions.push(transactionProof)
+  const lifecycle = await waitForLiveLifecycle({
+    client,
+    hash,
+    acceptedOptions: { retries: 180, interval: 3000 },
+    finalizedOptions: { retries: 360, interval: 5000 },
+    onObservation: (observation) => transactionProof.observations.push(observation),
   })
-  return finalizedReceipt
+  transactionProof.acceptedPhaseObserved = lifecycle.acceptedPhaseObserved
+  transactionProof.successfulFinalizationObserved = lifecycle.successfulFinalizationObserved
+  transactionProof.separateAcceptedAndFinalizedObservations = lifecycle.separateAcceptedAndFinalizedObservations
+  transactionProof.accepted = lifecycle.observations.find((item) => item.phase === 'ACCEPTED') ?? null
+  transactionProof.finalized = lifecycle.observations.find((item) => item.phase === 'FINALIZED') ?? null
+  return lifecycle.finalizedReceipt
 }
 
 async function readAll(client, address, functionName, leadingArgs = []) {
@@ -119,9 +92,9 @@ async function writeAndFinalize(client, account, chain, proof, request, label) {
 
 async function main() {
   requiredEnvironment()
-  const { name: network, chain } = selectGenLayerNetwork(
-    process.env.LIVE_GENLAYER_NETWORK || process.env.GENLAYER_NETWORK,
-  )
+  const configuredNetwork = process.env.LIVE_GENLAYER_NETWORK.trim()
+  const { name: network, chain } = selectGenLayerNetwork(configuredNetwork)
+  const proofMode = selectLiveProofMode(network, process.env.LIVE_PROOF_MODE)
   const deployer = createAccount(process.env.LIVE_DEPLOYER_PRIVATE_KEY)
   const creator = createAccount(process.env.LIVE_CREATOR_PRIVATE_KEY)
   if (deployer.address.toLowerCase() === creator.address.toLowerCase()) {
@@ -135,6 +108,14 @@ async function main() {
   const proof = {
     generatedAt: new Date().toISOString(),
     network,
+    proofMode: proofMode.mode,
+    persistent: proofMode.persistent,
+    balancesSimulated: proofMode.balancesSimulated,
+    persistentPayoutProofEligible: proofMode.persistentPayoutProofEligible,
+    persistentPayoutProofValid: false,
+    valueSemantics: proofMode.balancesSimulated
+      ? 'SIMULATED_STUDIONET_VALUES_NOT_VALID_FOR_PERSISTENT_PAYOUT_PROOF'
+      : 'PERSISTENT_PUBLIC_TESTNET_VALUES',
     chainId: chain.id,
     rpc: chain.rpcUrls.default.http[0],
     consensusContract: chain.consensusMainContract.address,
@@ -154,7 +135,7 @@ async function main() {
   const deploymentReceipt = await waitLifecycle(
     deployerClient,
     deploymentHash,
-    'deploy v2.1',
+    'deploy v2.1.1',
     chain,
     proof,
   )
@@ -253,9 +234,11 @@ async function main() {
   const balanceAfter = await creatorClient.getBalance({ address: creator.address })
   const balanceDelta = balanceAfter - balanceBefore
   if (approved.status !== 'APPROVED') throw new Error(`Expected APPROVED, got ${approved.status}`)
-  if (balanceDelta !== reward) {
+  const deltaMatchesReward = balanceDelta === reward
+  if (proofMode.persistent && !deltaMatchesReward) {
     throw new Error(`Expected finalized payout delta ${reward}, got ${balanceDelta}`)
   }
+  proof.persistentPayoutProofValid = proofMode.persistentPayoutProofEligible && deltaMatchesReward
   proof.scenarios.clearApproval = approved
   proof.scenarios.finalizedPayout = {
     recipient: creator.address,
@@ -263,6 +246,12 @@ async function main() {
     balanceAfter: balanceAfter.toString(),
     balanceDelta: balanceDelta.toString(),
     expectedReward: reward.toString(),
+    deltaMatchesReward,
+    balancesSimulated: proofMode.balancesSimulated,
+    persistentProofValid: proof.persistentPayoutProofValid,
+    qualification: proofMode.balancesSimulated
+      ? 'Studionet balances and transfers are simulated; this observation cannot satisfy the persistent payout-proof gate.'
+      : 'Persistent payout proof requires this exact delta and successful finalized lifecycle classification.',
   }
 
   const output = process.env.LIVE_PROOF_OUTPUT || '/tmp/contentbounty-live-consensus-proof.json'

@@ -58,6 +58,9 @@ jobs:
       - name: Network selection tests
         run: npm run test:network
 
+      - name: Live lifecycle classification tests
+        run: npm run test:lifecycle
+
       - name: Frontend classifier and configuration tests
         run: npm --prefix frontend test
 
