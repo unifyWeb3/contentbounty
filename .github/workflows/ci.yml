@@ -45,6 +45,7 @@ jobs:
         env:
           GENVM_VERSION: v0.2.16
           GENVM_SOURCE_MODE: release
+          GENVM_REPO: genlayerlabs/genvm
         run: npm run check:contract
 
       - name: Direct Mode contract tests

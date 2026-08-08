@@ -1185,3 +1185,79 @@ empty contract address
   approval evidence, hosting the exact committed adversarial fixture at
   `LIVE_REJECT_EVIDENCE_URI`, the mutation endpoint/webhook, explorer-linked
   finality, and an exact finalized recipient balance delta.
+
+## 2026-08-08 — official GenVM release source and production audit closure
+
+### Decisions and assumptions
+
+- Semantic lint remains pinned to `GENVM_VERSION=v0.2.16` in release mode.
+  `scripts/check_contract.sh` now defaults `GENVM_REPO` to the official
+  `genlayerlabs/genvm` repository, which publishes the v0.2.16
+  `genvm-universal.tar.xz` runner bundle. CI explicitly supplies the same
+  repository. Validation was not redirected to `genvm-manager` or weakened.
+- Root-only exact npm overrides constrain the five audited transitive packages
+  to `brace-expansion` 1.1.18, `js-yaml` 4.3.1, `viem` 2.55.11, `ws` 8.21.0,
+  and `ox` 0.14.33. The root lockfile changed only those resolutions; the
+  frontend manifest and lockfile are unchanged.
+- The official 216,630,904-byte universal runner bundle was downloaded from
+  the v0.2.16 GitHub release. Its observed SHA-256,
+  `4f0b358ec98ec148be9b95cdfb0f0e1a6cbe64da0194fdfac3fffc6f5d1d93e2`,
+  matches the digest published in the official release metadata.
+
+### Commands and exact results
+
+```text
+npm ci
+=> PASS; 217 packages installed
+
+npm ci --prefix frontend
+=> FIRST SANDBOX RUN: esbuild installer was blocked with EPERM
+=> AUTHORIZED EXACT RERUN PASS; 307 packages installed, 308 audited, 0
+vulnerabilities
+
+npm audit --omit=dev
+=> PASS; found 0 vulnerabilities
+
+npm audit --omit=dev --prefix frontend
+=> PASS; found 0 vulnerabilities
+
+npm run check:contract
+=> PASS through the normal release-mode script path;
+{"ok":true,"lint":{"ok":true,"passed":3},"validate":{"ok":true,
+"contract":"ContentBounty","methods":10,"view_methods":5,
+"write_methods":5,"ctor_params":0}}
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std \
+npm run test:contract -- --quiet
+=> PASS; 29 passed in 3.51s
+
+npm run test:evidence
+=> PASS; 3 passed in 0.05s
+
+npm run test:network
+=> PASS; 3 Node test-file subtests, 0 failed, in 4.65s
+
+npm run test:lifecycle
+=> PASS; 3 Node test-file subtests, 0 failed, in 1.87s
+
+npm --prefix frontend test
+=> PASS; 4 files, 67 tests in 4.95s
+
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= \
+npm run build:frontend
+=> PASS; vue-tsc plus Vite, 461 modules transformed, built in 2.19s
+
+npm run verify:frontend-bundle
+=> PASS; 8 files scanned, historical address absent
+
+bash -n scripts/check_contract.sh
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+git diff --check
+=> PASS
+```
+
+### Deployment status and blockers
+
+- No deployment, signing, key access, fund spending, or push occurred.
+- No network address, transaction hash, explorer finality, or balance-delta
+  proof exists; the previously recorded Bradbury live-proof blockers remain.
