@@ -62,6 +62,9 @@ jobs:
       - name: Live lifecycle classification tests
         run: npm run test:lifecycle
 
+      - name: Live evidence hosting tests
+        run: npm run test:hosting
+
       - name: Frontend classifier and configuration tests
         run: npm --prefix frontend test
 

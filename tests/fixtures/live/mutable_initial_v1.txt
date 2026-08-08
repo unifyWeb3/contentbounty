@@ -1,0 +1,7 @@
+ContentBounty live mutable fixture v1
+
+CONTENT BOUNTY LIVE PASS
+
+Official GenLayer documentation: https://docs.genlayer.com/
+
+This evidence is readable before the mutation webhook is called.

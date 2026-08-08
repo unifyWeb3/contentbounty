@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "contentbounty-live-evidence",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": true,
+  "assets": {
+    "directory": "../../tests/fixtures/live",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MUTABLE_EVIDENCE",
+        "class_name": "MutableEvidenceState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MutableEvidenceState"]
+    }
+  ]
+}

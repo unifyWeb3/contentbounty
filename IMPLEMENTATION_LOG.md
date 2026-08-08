@@ -1261,3 +1261,138 @@ git diff --check
 - No deployment, signing, key access, fund spending, or push occurred.
 - No network address, transaction hash, explorer finality, or balance-delta
   proof exists; the previously recorded Bradbury live-proof blockers remain.
+
+## 2026-08-08 — durable live-evidence hosting handoff
+
+### Preflight and security status
+
+- Bradbury persistent mode was confirmed before any transaction. The funded,
+  distinct public accounts were `0x3211d1419709682b81c53CC51cb63622E25488d3`
+  (deployer, 3.076255469721474380 GEN observed) and
+  `0x7fD87C28F4345ee8A4124511e16084464ca2E123` (creator,
+  1.999977837255340040 GEN observed).
+- Root `.env` CRLF line endings were normalized locally so the required
+  `set -a; source .env; set +a` sequence works. The ignored file remains mode
+  600 and was not committed.
+- A provider-discovery diagnostic inadvertently emitted the deployer private
+  key assignment into session tool output. The value is not reproduced in this
+  log and was never used to sign. Treat that key as compromised: rotate it and
+  update the ignored `.env` before any deployment or spending.
+- No hosting-provider credential or configured target was available. All four
+  live evidence/webhook inputs remain unset, so `npm run test:live` was not run
+  and no proof artifact exists.
+
+### Hosting preparation
+
+- Added `hosting/live-evidence`, a Cloudflare Worker scaffold using exact static
+  raw-text assets and a SQLite-backed Durable Object. `/approve.txt` and
+  `/reject.txt` serve committed fixture bytes, `/mutable.txt` selects initial or
+  changed bytes from durable state, and authenticated `POST /mutate` persists
+  the state transition after validating the runner's exact `uri` body.
+- The rejection route is tested byte-for-byte against
+  `adversarial_rejection_v1.txt`; normalized SHA-256 remains
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`
+  with 1,092 characters. The approval fixture contains both required rubric
+  facts.
+- Deployment instructions intentionally contain no account identifier, token,
+  or invented URL. Wrangler 4.120.0 must be authenticated externally, the
+  `MUTATION_TOKEN` must be entered as a provider secret, and the four `.env`
+  routes must use the actual HTTPS origin returned by deployment.
+
+### Commands and exact results
+
+```text
+npm run test:hosting
+=> PASS; final rerun 1 Node test-file subtest, 0 failed, in 0.70s
+
+npm run test:evidence -- --quiet
+=> PASS; 3 passed in 0.10s
+
+npm run test:lifecycle
+=> PASS; 3 Node test-file subtests, 0 failed, in 1.04s
+
+cd hosting/live-evidence
+npx --yes wrangler@4 deploy --dry-run --config wrangler.jsonc
+=> PASS with Wrangler 4.120.0; 5 static files read; Worker bundle 5.19 KiB
+(1.77 KiB gzip); Durable Object and Assets bindings validated; no deployment
+
+node --check hosting/live-evidence/worker.mjs
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+git diff --check
+=> PASS
+
+git status --short --branch
+=> clean at preflight start; no .env tracking
+```
+
+### Remaining external actions
+
+- Rotate the exposed deployer key and fund its replacement public address if
+  necessary. Re-run the public-address and balance-only preflight.
+- Authenticate Wrangler 4.120.0 to the intended Cloudflare account, set the
+  mutation token with `wrangler secret put`, deploy the prepared worker, and
+  verify the actual HTTPS routes as documented in
+  `hosting/live-evidence/README.md`.
+- Only after those gates pass may the authoritative live runner deploy the
+  contract. No Bradbury contract address, transaction hash, proof artifact, or
+  frontend deployment exists yet.
+
+## 2026-08-08 — Bradbury live-proof attempt stopped after deployment submission
+
+### Secret-safe preflight and authorization
+
+- The configured live mode was `testnetBradbury` with `persistent` proof mode.
+  The ignored root `.env` remained mode 600. The configured accounts derived to
+  distinct public addresses: deployer
+  `0x3d5915888E60CdaFFbB1F94DeeB71694F5de2a5d` and creator
+  `0x7fD87C28F4345ee8A4124511e16084464ca2E123`.
+- The last successful read-only balance check before the run observed
+  9.542458082508298980 GEN for the deployer and 1.999977837255340040 GEN
+  for the creator.
+- The Cloudflare evidence origin reported `mutableState=initial`; the approval
+  route contained both live-rubric facts; and the raw rejection route normalized
+  to SHA-256
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`
+  with 1,092 characters.
+
+### Authoritative run and preserved failure evidence
+
+```text
+set -a
+source .env
+set +a
+npm run test:live
+=> FAIL (exit 1) during the first deployment lifecycle read. The SDK submitted
+   deployment transaction
+   0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93,
+   then Bradbury RPC getTransactionAllData failed with `fetch failed` before a
+   lifecycle observation or contract address was recorded.
+```
+
+- Explorer link:
+  https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93
+- The mode-0600 proof artifact is preserved at
+  `/tmp/contentbounty-live-consensus-proof.json`. It records `status=FAILED`,
+  `proofComplete=false`, an empty contract address, and every completion check
+  false. No evidence mutation, bounty scenario, evaluation, or payout occurred.
+- Subsequent read-only RPC checks returned either DNS/connection failures or a
+  null `eth_getTransactionByHash` result. The transaction's authoritative final
+  state and any deployed address therefore remain unverified. The runner was not
+  rerun, avoiding a possible duplicate deployment.
+
+### Security incident and remaining blockers
+
+- A diagnostic command emitted the currently configured deployer private-key
+  assignment into protected session tool output. The secret is not reproduced
+  here or in the proof artifact, but the key must be treated as compromised.
+  The configured `.env` still derives to the same deployer address above, so a
+  replacement key has not yet been installed in this workspace. No further
+  signing may use that key.
+- Required before continuing: restore stable access to the official Bradbury
+  RPC/explorer; determine the recorded deployment transaction's final status and
+  address read-only; rotate and fund a new deployer key; update the mode-600
+  ignored `.env`; reconfirm distinct public accounts, balances, all evidence
+  routes, and `mutableState=initial`; then decide whether the existing deployment
+  can be resumed or a new authoritative run is required.
+- No persistent proof, finalized payout delta, frontend contract configuration,
+  frontend deployment, commit, or push was completed in this attempt.
