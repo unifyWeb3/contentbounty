@@ -13,7 +13,8 @@ import {
 
 const blockHash = `0x${'ab'.repeat(32)}`
 const otherBlockHash = `0x${'cd'.repeat(32)}`
-const stableTag = `0x${(0x20n - SHARED_CHAIN_CONFIRMATION_MARGIN).toString(16)}`
+const latestCommonTag = '0x20'
+const confirmedTag = `0x${(0x20n - SHARED_CHAIN_CONFIRMATION_MARGIN).toString(16)}`
 
 function consensusCallResult(chain: GenLayerChain): string {
   const abi = chain.consensusMainContract!.abi as Abi
@@ -27,8 +28,8 @@ function consensusCallResult(chain: GenLayerChain): string {
 type ProviderOptions = {
   chainId?: string
   height?: string
-  code?: string
-  probe?: string
+  code?: string | ((tag: string) => string)
+  probe?: string | ((tag: string) => string)
   blockHash?: string | ((tag: string) => string)
   failMethod?: string
 }
@@ -47,8 +48,14 @@ function providerFor(chain: GenLayerChain, options: ProviderOptions = {}): Ether
         const tag = String(params?.[0] ?? '')
         return { hash: responseFor(options.blockHash, tag, blockHash) }
       }
-      if (method === 'eth_getCode') return options.code ?? '0x60006000'
-      if (method === 'eth_call') return options.probe ?? consensusCallResult(chain)
+      if (method === 'eth_getCode') {
+        const tag = String(params?.[1] ?? '')
+        return responseFor(options.code, tag, '0x60006000')
+      }
+      if (method === 'eth_call') {
+        const tag = String(params?.[1] ?? '')
+        return responseFor(options.probe, tag, consensusCallResult(chain))
+      }
       throw new Error(`Unexpected provider method ${method}`)
     },
   }
@@ -62,8 +69,14 @@ function referenceFor(chain: GenLayerChain, options: ProviderOptions = {}): RpcR
       const tag = String(params[0] ?? '')
       return { hash: responseFor(options.blockHash, tag, blockHash) }
     }
-    if (method === 'eth_getCode') return options.code ?? '0x60006000'
-    if (method === 'eth_call') return options.probe ?? consensusCallResult(chain)
+    if (method === 'eth_getCode') {
+      const tag = String(params[1] ?? '')
+      return responseFor(options.code, tag, '0x60006000')
+    }
+    if (method === 'eth_call') {
+      const tag = String(params[1] ?? '')
+      return responseFor(options.probe, tag, consensusCallResult(chain))
+    }
     throw new Error(`Unexpected reference method ${method}`)
   })
 }
@@ -82,7 +95,7 @@ describe('verifyInjectedWalletNetwork', () => {
     })
   })
 
-  it('verifies equal Bradbury heads at a confirmed common block', async () => {
+  it('verifies equal latest-common history plus matching bytecode and probe', async () => {
     await expect(verifyInjectedWalletNetwork(
       providerFor(testnetBradbury),
       'testnetBradbury',
@@ -94,7 +107,11 @@ describe('verifyInjectedWalletNetwork', () => {
       consensusProbe: 'VERSION',
       consensusVersion: '2.0.0',
       referenceConsensusVersion: '2.0.0',
-      comparedBlockNumber: stableTag,
+      latestCommonBlockNumber: latestCommonTag,
+      latestCommonBlockHash: blockHash,
+      confirmedBlockNumber: confirmedTag,
+      confirmedBlockHash: blockHash,
+      comparedBlockNumber: latestCommonTag,
       comparedBlockHash: blockHash,
       comparedHeadLag: '0',
     })
@@ -105,27 +122,61 @@ describe('verifyInjectedWalletNetwork', () => {
     ['wallet a few blocks behind', '0x1d', '0x20'],
     ['reference one block behind', '0x20', '0x1f'],
     ['reference a few blocks behind', '0x20', '0x1d'],
-  ])('accepts %s within the permitted lag', async (_label, walletHeight, referenceHeight) => {
+  ])('accepts %s when latest-common history matches', async (_label, walletHeight, referenceHeight) => {
     const wallet = providerFor(testnetBradbury, { height: walletHeight })
     const reference = referenceFor(testnetBradbury, { height: referenceHeight })
     await expect(verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, reference))
-      .resolves.toMatchObject({ comparedHeadLag: expect.any(String) })
+      .resolves.toMatchObject({
+        latestCommonBlockNumber: `0x${BigInt(walletHeight) < BigInt(referenceHeight)
+          ? BigInt(walletHeight).toString(16)
+          : BigInt(referenceHeight).toString(16)}`,
+        comparedHeadLag: expect.any(String),
+      })
   })
 
-  it('handles a block produced between the two head requests by comparing the stable block', async () => {
+  it('handles a block produced between height requests when latest-common history matches', async () => {
+    const wallet = providerFor(testnetBradbury, { height: '0x20' })
+    const reference = referenceFor(testnetBradbury, { height: '0x21' })
+    await expect(verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, reference))
+      .resolves.toMatchObject({ latestCommonBlockNumber: latestCommonTag, latestCommonBlockHash: blockHash })
+  })
+
+  it('rejects matching older history with a different latest-common hash', async () => {
     const wallet = providerFor(testnetBradbury, {
       height: '0x20',
-      blockHash: (tag) => tag === stableTag ? blockHash : otherBlockHash,
+      blockHash: (tag) => tag === confirmedTag ? blockHash : otherBlockHash,
     })
     const reference = referenceFor(testnetBradbury, {
       height: '0x21',
-      blockHash: (tag) => tag === stableTag ? blockHash : `0x${'ef'.repeat(32)}`,
+      blockHash: () => blockHash,
     })
     await expect(verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, reference))
-      .resolves.toMatchObject({ comparedBlockNumber: stableTag, comparedBlockHash: blockHash })
+      .rejects.toMatchObject({
+        code: 'AMBIGUOUS_SHARED_CHAIN',
+        message: expect.stringContaining('latest common block'),
+      })
   })
 
-  it('uses the stable block tag for both consensus identity probes', async () => {
+  it.each([
+    ['wallet head is behind', '0x1f', '0x20'],
+    ['official head is behind', '0x20', '0x1f'],
+  ])('rejects a recent fork when %s', async (_label, walletHeight, referenceHeight) => {
+    const commonTag = '0x1f'
+    await expect(verifyInjectedWalletNetwork(
+      providerFor(testnetBradbury, {
+        height: walletHeight,
+        blockHash: (tag) => tag === commonTag ? otherBlockHash : blockHash,
+      }),
+      'testnetBradbury',
+      testnetBradbury,
+      referenceFor(testnetBradbury, { height: referenceHeight }),
+    )).rejects.toMatchObject({
+      code: 'AMBIGUOUS_SHARED_CHAIN',
+      message: expect.stringContaining('latest common block 0x1f'),
+    })
+  })
+
+  it('uses the latest-common block tag for both consensus identity probes', async () => {
     const walletCalls: Array<{ method: string; params?: unknown[] }> = []
     const referenceCalls: Array<{ method: string; params?: unknown[] }> = []
     const wallet = providerFor(testnetBradbury)
@@ -146,11 +197,11 @@ describe('verifyInjectedWalletNetwork', () => {
     await verifyInjectedWalletNetwork(wallet, 'testnetBradbury', testnetBradbury, observedReference)
     expect(walletCalls.filter((call) => ['eth_getCode', 'eth_call'].includes(call.method)).every((call) => {
       const params = call.params ?? []
-      return params[params.length - 1] === stableTag
+      return params[params.length - 1] === latestCommonTag
     })).toBe(true)
     expect(referenceCalls.filter((call) => ['eth_getCode', 'eth_call'].includes(call.method)).every((call) => {
       const params = call.params ?? []
-      return params[params.length - 1] === stableTag
+      return params[params.length - 1] === latestCommonTag
     })).toBe(true)
   })
 
@@ -172,16 +223,16 @@ describe('verifyInjectedWalletNetwork', () => {
     )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN' })
   })
 
-  it('rejects different hashes at the stable common block', async () => {
+  it('rejects different hashes at the confirmed continuity block', async () => {
     await expect(verifyInjectedWalletNetwork(
-      providerFor(testnetBradbury, { blockHash: (tag) => tag === stableTag ? blockHash : otherBlockHash }),
+      providerFor(testnetBradbury, { blockHash: (tag) => tag === confirmedTag ? otherBlockHash : blockHash }),
       'testnetBradbury',
       testnetBradbury,
-      referenceFor(testnetBradbury, { blockHash: () => otherBlockHash }),
-    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN', message: expect.stringContaining('stable block') })
+      referenceFor(testnetBradbury),
+    )).rejects.toMatchObject({ code: 'AMBIGUOUS_SHARED_CHAIN', message: expect.stringContaining('confirmed continuity block') })
   })
 
-  it('rejects a Bradbury consensus bytecode mismatch', async () => {
+  it('rejects a latest-common Bradbury consensus bytecode mismatch', async () => {
     await expect(verifyInjectedWalletNetwork(
       providerFor(testnetBradbury),
       'testnetBradbury',
@@ -190,7 +241,7 @@ describe('verifyInjectedWalletNetwork', () => {
     )).rejects.toMatchObject({ code: 'CONSENSUS_IDENTITY_MISMATCH', message: expect.stringContaining('bytecode') })
   })
 
-  it('rejects a Bradbury ABI probe mismatch', async () => {
+  it('rejects a latest-common Bradbury VERSION result mismatch', async () => {
     await expect(verifyInjectedWalletNetwork(
       providerFor(testnetBradbury),
       'testnetBradbury',
@@ -256,7 +307,9 @@ describe('runVerifiedWalletWrite', () => {
   ] as const)('blocks a %s write before writeContract when identity is ambiguous', async (_label, value) => {
     const writeContract = vi.fn(async (_request: { value: bigint }) => '0xtransaction')
     await expect(runVerifiedWalletWrite({
-      provider: providerFor(testnetBradbury, { blockHash: () => otherBlockHash }),
+      provider: providerFor(testnetBradbury, {
+        blockHash: (tag) => tag === latestCommonTag ? otherBlockHash : blockHash,
+      }),
       networkSelector: 'testnetBradbury',
       chain: testnetBradbury,
       referenceRequest: referenceFor(testnetBradbury),

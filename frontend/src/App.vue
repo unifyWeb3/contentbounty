@@ -5,7 +5,6 @@ import { TransactionStatus } from 'genlayer-js/types'
 import {
   CONTRACT_ADDRESS,
   EXPLORER_URL,
-  HISTORICAL_V0_2_ADDRESS,
   NETWORK,
   NETWORK_LABEL,
   NETWORK_SELECTOR,
@@ -117,8 +116,7 @@ const postForm = ref({
 const submitForm = ref({ evidenceUri: '' })
 
 const connected = computed(() => Boolean(walletAddress.value))
-const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS)
-  && CONTRACT_ADDRESS.toLowerCase() !== HISTORICAL_V0_2_ADDRESS.toLowerCase())
+const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS))
 const mySubmissions = computed(() => {
   if (!walletAddress.value) return []
   const address = walletAddress.value.toLowerCase()

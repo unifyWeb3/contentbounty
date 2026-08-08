@@ -1,6 +1,6 @@
 import { studionet, testnetBradbury } from 'genlayer-js/chains'
 
-export const DEFAULT_GENLAYER_NETWORK = 'studionet'
+export const DEFAULT_GENLAYER_NETWORK = 'testnetBradbury'
 
 export const SUPPORTED_GENLAYER_NETWORKS = {
   studionet,

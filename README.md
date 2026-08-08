@@ -113,12 +113,15 @@ Before every write it fail-closed verifies the injected provider's selected
 consensus address, bytecode, and official consensus ABI identity probe.
 Bradbury shares chain ID `4221` with another network, and an injected wallet
 does not expose its RPC URL, so the app compares both providers at a stable
-common block. Identical history, bytecode, and probe output are treated as
+common execution point. It requires the block hash, consensus bytecode, and
+`VERSION()` result to match at the latest height both providers report. An
+older block 2 confirmations behind is also checked for continuity. Identical
+history, bytecode, and probe output are treated as
 equivalent execution state; this is not a cryptographic proof of the wallet's
 RPC URL. A wallet that cannot be automatically switched must be manually
 configured to Bradbury's chain-4221 RPC; ambiguous identity blocks both
 payable and nonpayable writes. The guard permits at most 3 sampled head blocks
-of lag and compares a common block 2 confirmations behind both heads.
+of lag.
 
 The UI distinguishes:
 
@@ -172,15 +175,21 @@ the shorter three-check AST-only lint command.
 cd frontend
 npm install
 cp .env.example .env
-# select VITE_GENLAYER_NETWORK and set a matching deployed v2 address
+# Bradbury is the default; set a finalized v2.1.1 address when one exists
 npm run dev
 ```
 
-Production build:
+Production verification from the repository root:
 
 ```bash
-npm run build
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= npm run build:frontend
+npm run verify:frontend-bundle
 ```
+
+The UI intentionally remains unconfigured with an empty contract address. A
+build supplied with the historical v0.2 address fails, and the bundle verifier
+also rejects any generated asset containing that address. Studionet is never an
+implicit frontend choice; select it explicitly only for smoke/demo use.
 
 ## Deploy v2
 
@@ -214,9 +223,12 @@ verifies the finalized winner balance delta. Persistent proof mode accepts only
 `LIVE_PROOF_MODE=studionet-smoke` demo mode and is never valid settlement
 evidence. The runner checkpoints a mode-0600 proof artifact before the first
 transaction and after each lifecycle observation and scenario. Its
-`proofComplete` flag is true only after deployment finality, clear rejection,
+`proofComplete` flag is true only after deployment finality, exact on-chain
+commitment to the committed adversarial rejection fixture, clear rejection,
 mutation inconclusive behavior, clear approval finality, and an exact
-persistent recipient balance delta. No deployment or live proof exists yet.
+persistent recipient balance delta. The fixture manifest records SHA-256
+`efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`.
+No deployment or live proof exists yet.
 It is never run by CI and requires explicit authorization plus funded keys and
 external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
 
@@ -225,7 +237,7 @@ external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSU
 GitHub Actions installs the commit-pinned Python dependencies, uses the official
 GenVM `v0.2.16` source at commit
 `387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, and runs full semantic lint,
-29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 64 frontend
+29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 67 frontend
 tests, frontend typecheck/build, and diff checks.
 
 ## License

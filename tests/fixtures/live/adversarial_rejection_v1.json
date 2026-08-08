@@ -1,0 +1,18 @@
+{
+  "fixture_version": "content-bounty-live-adversarial-rejection-v1",
+  "fixture_name": "adversarial_rejection_v1",
+  "format": "content-bounty-text-v1",
+  "text_path": "tests/fixtures/live/adversarial_rejection_v1.txt",
+  "expected_normalized_sha256": "efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537",
+  "character_count": 1092,
+  "utf8_byte_count": 1092,
+  "description": "Canonical rejection evidence that clearly fails the live rubric while carrying representative structured prompt-injection attacks.",
+  "adversarial_cases": [
+    "closing-tag injection",
+    "ignore-previous-instructions attack",
+    "fake JSON and output-format instructions",
+    "system, developer, and assistant role impersonation",
+    "injection propagated through an extracted-observation-shaped payload",
+    "malicious rubric override text"
+  ]
+}

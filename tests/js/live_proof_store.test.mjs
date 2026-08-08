@@ -63,11 +63,14 @@ test('proofComplete requires every persistent settlement check', () => {
     completionChecks: {
       deploymentFinalized: true,
       clearRejection: true,
+      adversarialRejectionVerified: false,
       mutationInconclusive: true,
       clearApprovalFinalized: true,
       persistentPayoutDelta: false,
     },
   }
+  assert.equal(updateProofCompletion(proof), false)
+  proof.completionChecks.adversarialRejectionVerified = true
   assert.equal(updateProofCompletion(proof), false)
   proof.completionChecks.persistentPayoutDelta = true
   assert.equal(updateProofCompletion(proof), true)

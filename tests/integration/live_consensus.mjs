@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { createAccount, createClient } from 'genlayer-js'
 import { selectGenLayerNetwork } from '../../scripts/genlayer-network.mjs'
+import {
+  classifyOnChainAdversarialCommitment,
+  loadCommittedLiveAdversarialFixture,
+} from '../../scripts/live-adversarial-fixture.mjs'
 import { waitForLiveLifecycle } from '../../scripts/live-lifecycle.mjs'
 import { selectLiveProofMode } from '../../scripts/live-proof-mode.mjs'
 import {
@@ -108,6 +112,7 @@ export async function main() {
   const creatorClient = createClient({ chain, account: creator })
   const sourcePath = fileURLToPath(new URL('../../contracts/content_bounty.py', import.meta.url))
   const code = readFileSync(sourcePath, 'utf8')
+  const adversarialFixture = loadCommittedLiveAdversarialFixture()
   const reward = BigInt(process.env.LIVE_REWARD_WEI || '1000000000000000')
   const output = process.env.LIVE_PROOF_OUTPUT || '/tmp/contentbounty-live-consensus-proof.json'
   const proof = createProofArtifact(output, {
@@ -129,6 +134,16 @@ export async function main() {
     deployer: deployer.address,
     creator: creator.address,
     contractAddress: '',
+    adversarialRejectionFixture: {
+      fixtureVersion: adversarialFixture.fixtureVersion,
+      fixtureName: adversarialFixture.fixtureName,
+      expectedNormalizedSha256: adversarialFixture.expectedNormalizedSha256,
+      observedOnChainSha256: '',
+      characterCount: adversarialFixture.characterCount,
+      description: adversarialFixture.description,
+      adversarialCases: adversarialFixture.adversarialCases,
+      verified: false,
+    },
     transactions: [],
     scenarios: {},
     unsupported: {
@@ -215,9 +230,31 @@ export async function main() {
       process.env.LIVE_REJECT_EVIDENCE_URI,
       'submit clear rejection evidence',
     )
+    const rejectedCommitment = await creatorClient.readContract({
+      address,
+      functionName: 'get_submission',
+      args: [rejectSubmission],
+    })
+    const commitmentVerification = classifyOnChainAdversarialCommitment(
+      adversarialFixture,
+      rejectedCommitment.evidence_sha256,
+    )
+    proof.adversarialRejectionFixture.observedOnChainSha256 = commitmentVerification.observedOnChainSha256
+    proof.adversarialRejectionFixture.verified = commitmentVerification.verified
+    proof.completionChecks.adversarialRejectionVerified = commitmentVerification.verified
+    updateProofCompletion(proof)
+    checkpoint()
+    if (!proof.adversarialRejectionFixture.verified) {
+      throw new Error(
+        `Hosted adversarial rejection fixture hash mismatch: expected ${adversarialFixture.expectedNormalizedSha256}, got ${commitmentVerification.observedOnChainSha256 || 'MISSING'}`,
+      )
+    }
     const rejected = await evaluateAndRead(rejectSubmission, 'evaluate clear rejection')
     if (rejected.status !== 'REJECTED') throw new Error(`Expected REJECTED, got ${rejected.status}`)
-    proof.scenarios.clearRejection = rejected
+    proof.scenarios.clearRejection = {
+      submission: rejected,
+      adversarialFixture: { ...proof.adversarialRejectionFixture },
+    }
     proof.completionChecks.clearRejection = true
     updateProofCompletion(proof)
     checkpoint()
@@ -284,7 +321,7 @@ export async function main() {
     checkpoint()
 
     if (proofMode.persistent && !proof.proofComplete) {
-      throw new Error('Persistent proof is incomplete: deployment, rejection, mutation, approval, and payout checks must all pass.')
+      throw new Error('Persistent proof is incomplete: deployment, adversarial rejection fixture, rejection, mutation, approval, and payout checks must all pass.')
     }
     proof.status = 'COMPLETE'
     updateProofCompletion(proof)

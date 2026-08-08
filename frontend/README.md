@@ -21,10 +21,11 @@ restricted to authorized `testnetBradbury` runs.
   accepted or successfully finalized transaction.
 - Before every write, verifies the injected provider's chain ID, selected
   consensus contract code, and official consensus ABI probe. Bradbury also
-  compares wallet and official RPC block hashes at a stable common block,
-  allowing at most 3 sampled head blocks of lag and using a 2-block
-  confirmation margin, and requires matching Bradbury bytecode and probe
-  output. Because the wallet RPC URL is unavailable, this
+  compares wallet and official RPC block hashes at the latest height both
+  providers report, allowing at most 3 sampled head blocks of lag. Bradbury
+  bytecode and `VERSION()` output must match at that latest common block; a
+  block 2 confirmations behind is additionally checked for continuity.
+  Because the wallet RPC URL is unavailable, this
   treats identical execution state as equivalent rather than claiming a
   cryptographic RPC-identity proof.
 - Reads v2 bounties, bounty submissions, and wallet activity through bounded
@@ -46,24 +47,31 @@ npm test
 npm run build
 ```
 
+Repository-level production verification additionally runs
+`npm run verify:frontend-bundle`, which fails if generated assets contain the
+historical v0.2 address. The Vite production configuration also rejects that
+address before bundling.
+
 ## Environment
 
 | Variable | Required | Purpose |
 |---|---:|---|
 | `VITE_CONTRACT_ADDRESS` | yes | Deployed ContentBounty v2 address |
-| `VITE_GENLAYER_NETWORK` | no | `studionet` (default smoke/demo) or `testnetBradbury` |
+| `VITE_GENLAYER_NETWORK` | no | `testnetBradbury` (default) or explicit `studionet` smoke/demo |
 
 The selector chooses the complete official `genlayer-js` chain object,
 including its RPC, explorer, chain ID, and consensus contract configuration.
 Unsupported and differently-cased values fail the application build/startup.
 Bradbury shares chain ID `4221` with another network; wallet switching cannot
-select between them automatically. If the injected provider's stable block,
+select between them automatically. If the injected provider's latest-common block,
 consensus code, or ABI probe is unavailable or mismatched, every write is
 blocked and the UI instructs the user to change the wallet's chain-4221 RPC to
 Bradbury. The selected official RPC is used as the identity reference; if it
 is unreachable, the app fails closed rather than guessing.
 
-The historical v0.2 address is incompatible with this frontend.
+The historical v0.2 address is incompatible with this frontend. Until a
+finalized v2.1.1 Bradbury address is supplied, keep
+`VITE_CONTRACT_ADDRESS=` empty; the UI remains honestly not configured.
 
 Prepare evidence as UTF-8 raw text with the repository helper before publishing
 it at a stable, preferably content-addressed HTTPS URI. The normalized text

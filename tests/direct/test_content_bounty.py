@@ -7,6 +7,7 @@ approval and proves that an independent validator rejects it.
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -588,7 +589,9 @@ def test_expiry_supersedes_pending_and_refunds_after_grace(direct_vm, direct_dep
     contract = direct_deploy(CONTRACT)
     bounty_id = post(contract, direct_vm)
     submission_id = contract.submit_content(bounty_id, URI)
-    direct_vm.warp("2026-08-08T00:00:00Z")
+    evaluation_deadline = contract.get_bounty(bounty_id)["evaluation_deadline"]
+    after_grace = datetime.fromtimestamp(evaluation_deadline + 1, tz=timezone.utc)
+    direct_vm.warp(after_grace.isoformat().replace("+00:00", "Z"))
 
     contract.expire_bounty(bounty_id)
     assert contract.get_bounty(bounty_id)["status"] == "EXPIRED"

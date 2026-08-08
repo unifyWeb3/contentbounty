@@ -7,9 +7,9 @@ import {
 } from './networkSelection'
 
 describe('selectGenLayerNetwork', () => {
-  it('defaults an unset or blank selector to Studionet', () => {
-    expect(selectGenLayerNetwork()).toEqual({ name: DEFAULT_GENLAYER_NETWORK, chain: studionet })
-    expect(selectGenLayerNetwork('  ')).toEqual({ name: DEFAULT_GENLAYER_NETWORK, chain: studionet })
+  it('defaults an unset or blank selector to Bradbury', () => {
+    expect(selectGenLayerNetwork()).toEqual({ name: DEFAULT_GENLAYER_NETWORK, chain: testnetBradbury })
+    expect(selectGenLayerNetwork('  ')).toEqual({ name: DEFAULT_GENLAYER_NETWORK, chain: testnetBradbury })
   })
 
   it.each([

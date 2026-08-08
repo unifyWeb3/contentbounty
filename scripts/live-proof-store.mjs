@@ -23,6 +23,7 @@ export function updateProofCompletion(proof) {
     && proof.persistentPayoutProofEligible
     && checks.deploymentFinalized
     && checks.clearRejection
+    && checks.adversarialRejectionVerified
     && checks.mutationInconclusive
     && checks.clearApprovalFinalized
     && checks.persistentPayoutDelta,
@@ -50,6 +51,7 @@ export function createProofArtifact(output, initialProof) {
     completionChecks: {
       deploymentFinalized: false,
       clearRejection: false,
+      adversarialRejectionVerified: false,
       mutationInconclusive: false,
       clearApprovalFinalized: false,
       persistentPayoutDelta: false,

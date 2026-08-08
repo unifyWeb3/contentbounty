@@ -1,6 +1,6 @@
 import { studionet, testnetBradbury } from 'genlayer-js/chains'
 
-export const DEFAULT_GENLAYER_NETWORK = 'studionet'
+export const DEFAULT_GENLAYER_NETWORK = 'testnetBradbury'
 export const PERSISTENT_DEPLOYMENT_MODE = 'persistent'
 export const STUDIONET_SMOKE_DEPLOYMENT_MODE = 'studionet-smoke'
 

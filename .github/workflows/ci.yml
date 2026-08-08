@@ -65,7 +65,13 @@ jobs:
         run: npm --prefix frontend test
 
       - name: Frontend typecheck and production build
+        env:
+          VITE_GENLAYER_NETWORK: testnetBradbury
+          VITE_CONTRACT_ADDRESS: ''
         run: npm run build:frontend
+
+      - name: Verify historical address is absent from frontend bundle
+        run: npm run verify:frontend-bundle
 
       - name: Diff and generated-file check
         run: |

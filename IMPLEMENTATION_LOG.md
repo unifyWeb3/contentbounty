@@ -1065,3 +1065,123 @@ git diff --check
 |---|---|---|---|
 | testnetBradbury | Not deployed | Not deployed | Persistent proof blocked |
 | Studionet smoke | Not deployed in this session | Not deployed | Demo mode only |
+
+## 2026-08-08 — latest-common wallet identity and adversarial proof binding
+
+### Decisions and assumptions
+
+- Bradbury remains the only persistent network, and the frontend default is now
+  `testnetBradbury`. Studionet is available only when explicitly selected for
+  smoke/demo. The ignored local `frontend/.env` now contains an empty contract
+  address and Bradbury selector; no historical v0.2 address is consumed by a
+  local or production build.
+- Shared-chain preflight now computes
+  `latestCommonHeight=min(walletHeight, officialHeight)` and compares both
+  providers' block hashes at that exact height. Consensus bytecode and the
+  Bradbury `VERSION()` probe are read at that latest-common block. The older
+  `latestCommonHeight - 2` block remains an additional continuity check; it is
+  never the sole identity comparison. A maximum sampled-head lag of 3 blocks
+  remains permitted. Equivalent execution state is the honest conclusion; the
+  wallet RPC URL itself remains unavailable to the browser.
+- Added a committed canonical rejection fixture and manifest at
+  `tests/fixtures/live/adversarial_rejection_v1.{txt,json}`. Its normalized
+  SHA-256 is
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537` and it
+  contains 1,092 characters. The live runner reads the on-chain submission
+  digest, compares it to this manifest before accepting the rejection scenario,
+  records expected/observed hashes and fixture version, and requires
+  `adversarialRejectionVerified` for `proofComplete`.
+- Vite now rejects the historical v0.2 address at build configuration time and
+  `scripts/verify_frontend_bundle.mjs` scans generated assets for it. The UI
+  remains not configured until a finalized v2.1.1 Bradbury address is supplied.
+
+### Commands and exact results
+
+```text
+npm ci
+=> PASS; 217 packages installed; npm audit reported 4 existing findings
+(1 moderate, 3 high)
+
+npm ci --prefix frontend
+=> PASS; 307 packages installed; 0 vulnerabilities reported
+
+GENVM_SOURCE_MODE=prebuilt \
+GENVM_PREBUILT_DIR=/tmp/contentbounty-genvm-prebuilt-v0.2.16 \
+npm run check:contract
+=> PASS; full semantic lint 3/3; ContentBounty schema validated with 10
+methods (5 view / 5 write) and 0 constructor parameters
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std \
+npm run test:contract -- --quiet
+=> INITIAL RUN: 28 passed, 1 failed because the expiry test used a fixed
+2026-08-08 timestamp that was no longer guaranteed to follow its dynamically
+created deadline
+=> FIX: derive the warp timestamp from evaluation_deadline + 1 second
+=> FINAL PASS; 29 passed in 12.89s
+
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= \
+npm run build:frontend
+=> PASS; vue-tsc and Vite production build, 461 modules transformed; Vite
+final verification build completed in 1.50s
+
+VITE_GENLAYER_NETWORK=testnetBradbury \
+VITE_CONTRACT_ADDRESS=0xFf546d6B1CD45d2859a705a7FA181807670B9015 \
+npm run build:frontend
+=> EXPECTED REJECTION; exited 1 before bundling with the incompatible-v0.2
+address error
+
+npm run verify:frontend-bundle
+=> PASS; 8 generated files scanned; historical address absent
+
+npm --prefix frontend test -- --run
+=> PASS; final rerun 4 files, 67 tests in 8.02s
+
+npm run test:network
+=> PASS; 3 Node test-file subtests, 0 failed, in 8.35s
+
+npm run test:lifecycle
+=> PASS; 3 Node test-file subtests, 0 failed, in 4.43s
+
+npm run test:evidence -- --quiet
+=> PASS; 3 evidence/preparation tests in 0.26s
+
+node --check deploy.mjs
+node --check scripts/genlayer-network.mjs
+node --check scripts/live-proof-mode.mjs
+node --check scripts/live-lifecycle.mjs
+node --check scripts/live-proof-store.mjs
+node --check scripts/live-adversarial-fixture.mjs
+node --check scripts/verify_frontend_bundle.mjs
+node --check tests/integration/live_consensus.mjs
+=> PASS; all eight JavaScript syntax checks exited 0
+
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+=> PASS; CI YAML parsed successfully
+
+env -u LIVE_GENLAYER_NETWORK -u LIVE_PROOF_MODE \
+-u LIVE_DEPLOYER_PRIVATE_KEY -u LIVE_CREATOR_PRIVATE_KEY \
+-u LIVE_APPROVE_EVIDENCE_URI -u LIVE_REJECT_EVIDENCE_URI \
+-u LIVE_MUTABLE_EVIDENCE_URI -u LIVE_MUTATION_WEBHOOK_URL \
+npm run test:live
+=> EXPECTED PASS OF THE NEGATIVE GATE; exited 1 before RPC/deployment and
+listed all eight required LIVE_* inputs
+
+git diff --check
+=> PASS
+
+git diff --quiet -- AUDIT_REPORT.md
+=> PASS; AUDIT_REPORT.md unchanged
+
+git status --short
+=> PASS; only the documented remediation files were modified/untracked before
+the local milestone commit; ignored frontend/.env contains Bradbury plus an
+empty contract address
+```
+
+### Remaining external blockers
+
+- No deployment, signing, fund spending, or live proof was performed.
+- Authorized persistent Bradbury proof still requires funded distinct accounts,
+  approval evidence, hosting the exact committed adversarial fixture at
+  `LIVE_REJECT_EVIDENCE_URI`, the mutation endpoint/webhook, explorer-linked
+  finality, and an exact finalized recipient balance delta.

@@ -7,7 +7,7 @@ import {
 } from '../../scripts/genlayer-network.mjs'
 
 test('deployment network selection returns complete official chain objects', () => {
-  assert.deepEqual(selectGenLayerNetwork(), { name: 'studionet', chain: studionet })
+  assert.deepEqual(selectGenLayerNetwork(), { name: 'testnetBradbury', chain: testnetBradbury })
   assert.deepEqual(selectGenLayerNetwork('testnetBradbury'), { name: 'testnetBradbury', chain: testnetBradbury })
 })
 

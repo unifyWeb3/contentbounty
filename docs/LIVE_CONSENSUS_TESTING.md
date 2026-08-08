@@ -18,9 +18,15 @@ evidence services, and creates persistent network state.
 - explicit authorization to deploy and spend funds.
 
 The approval fixture must clearly contain `CONTENT BOUNTY LIVE PASS` and
-`https://docs.genlayer.com/`. The rejection fixture must clearly fail at least
-one requirement and should include the prompt attacks covered by Direct Mode so
-the network run also exercises a real configured model.
+`https://docs.genlayer.com/`. The rejection URI must host the exact canonical
+bytes from `tests/fixtures/live/adversarial_rejection_v1.txt`. Its committed
+manifest is `tests/fixtures/live/adversarial_rejection_v1.json`, with normalized
+SHA-256
+`efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`
+and 1,092 characters. It clearly fails the live rubric while carrying closing
+delimiter attacks, instruction override text, fake JSON/output directives,
+role impersonation, propagated observation injection, and a malicious rubric
+override.
 
 ```bash
 export LIVE_GENLAYER_NETWORK=testnetBradbury
@@ -45,7 +51,11 @@ before the first transaction and atomically checkpoints deployment metadata,
 every lifecycle observation, each completed scenario, and terminal failures
 (default: `/tmp/contentbounty-live-consensus-proof.json`). No private key is
 written. `proofComplete` is true only when every persistent settlement check
-passes.
+passes. In particular, the runner compares the rejection submission's on-chain
+`evidence_sha256` with the committed manifest before setting
+`adversarialRejectionVerified`. The proof records fixture version, expected
+hash, observed on-chain hash, and verification result; a hosted-content mismatch
+checkpoints failure and exits nonzero.
 
 For a non-persistent Studionet smoke run, use:
 

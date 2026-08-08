@@ -13,7 +13,13 @@ export interface WalletNetworkVerification {
   consensusProbe: 'VERSION' | 'getContracts'
   consensusVersion?: string
   referenceConsensusVersion?: string
+  latestCommonBlockNumber?: string
+  latestCommonBlockHash?: string
+  confirmedBlockNumber?: string
+  confirmedBlockHash?: string
+  /** @deprecated Alias for latestCommonBlockNumber. */
   comparedBlockNumber?: string
+  /** @deprecated Alias for latestCommonBlockHash. */
   comparedBlockHash?: string
   comparedHeadLag?: string
 }
@@ -187,28 +193,59 @@ async function verifySharedChainHistory(
         `The wallet and selected ${networkSelector} RPC heads differ by ${headLag} blocks, exceeding the permitted lag of ${MAX_SHARED_CHAIN_HEAD_LAG}. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
-    const minimumHeight = walletHeight < referenceHeight ? walletHeight : referenceHeight
-    if (minimumHeight < SHARED_CHAIN_CONFIRMATION_MARGIN) {
-      throw new WalletNetworkPreflightError(
-        'AMBIGUOUS_SHARED_CHAIN',
-        `The wallet and selected ${networkSelector} RPC are too close to genesis for a stable comparison. ${sharedChainInstruction(networkSelector, chain)}`,
-      )
-    }
-    const stableHeight = minimumHeight - SHARED_CHAIN_CONFIRMATION_MARGIN
-    const blockNumber = `0x${stableHeight.toString(16)}`
-    const [walletBlock, referenceBlock] = await Promise.all([
-      providerRequest(provider, 'eth_getBlockByNumber', [blockNumber, false], networkSelector),
-      officialRequest(referenceRequest, 'eth_getBlockByNumber', [blockNumber, false], networkSelector),
+    const latestCommonHeight = walletHeight < referenceHeight ? walletHeight : referenceHeight
+    const latestCommonBlockNumber = `0x${latestCommonHeight.toString(16)}`
+    const [walletLatestCommonBlock, referenceLatestCommonBlock] = await Promise.all([
+      providerRequest(provider, 'eth_getBlockByNumber', [latestCommonBlockNumber, false], networkSelector),
+      officialRequest(referenceRequest, 'eth_getBlockByNumber', [latestCommonBlockNumber, false], networkSelector),
     ])
-    const walletHash = blockHash(walletBlock, 'Injected wallet eth_getBlockByNumber')
-    const referenceHash = blockHash(referenceBlock, 'Selected network eth_getBlockByNumber')
-    if (walletHash !== referenceHash) {
+    const walletLatestCommonHash = blockHash(
+      walletLatestCommonBlock,
+      'Injected wallet latest-common eth_getBlockByNumber',
+    )
+    const referenceLatestCommonHash = blockHash(
+      referenceLatestCommonBlock,
+      'Selected network latest-common eth_getBlockByNumber',
+    )
+    if (walletLatestCommonHash !== referenceLatestCommonHash) {
       throw new WalletNetworkPreflightError(
         'AMBIGUOUS_SHARED_CHAIN',
-        `The wallet and selected ${networkSelector} RPC disagree at stable block ${blockNumber}. Identical chain history is treated as equivalent execution state because the wallet RPC URL is unavailable. ${sharedChainInstruction(networkSelector, chain)}`,
+        `The wallet and selected ${networkSelector} RPC disagree at latest common block ${latestCommonBlockNumber}. Identical chain history is treated as equivalent execution state because the wallet RPC URL is unavailable. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
-    return { blockNumber, blockHash: walletHash, headLag: headLag.toString() }
+
+    let confirmedBlockNumber: string | undefined
+    let confirmedBlockHash: string | undefined
+    if (latestCommonHeight >= SHARED_CHAIN_CONFIRMATION_MARGIN) {
+      const confirmedHeight = latestCommonHeight - SHARED_CHAIN_CONFIRMATION_MARGIN
+      confirmedBlockNumber = `0x${confirmedHeight.toString(16)}`
+      const [walletConfirmedBlock, referenceConfirmedBlock] = await Promise.all([
+        providerRequest(provider, 'eth_getBlockByNumber', [confirmedBlockNumber, false], networkSelector),
+        officialRequest(referenceRequest, 'eth_getBlockByNumber', [confirmedBlockNumber, false], networkSelector),
+      ])
+      const walletConfirmedHash = blockHash(
+        walletConfirmedBlock,
+        'Injected wallet confirmed eth_getBlockByNumber',
+      )
+      const referenceConfirmedHash = blockHash(
+        referenceConfirmedBlock,
+        'Selected network confirmed eth_getBlockByNumber',
+      )
+      if (walletConfirmedHash !== referenceConfirmedHash) {
+        throw new WalletNetworkPreflightError(
+          'AMBIGUOUS_SHARED_CHAIN',
+          `The wallet and selected ${networkSelector} RPC disagree at confirmed continuity block ${confirmedBlockNumber}. ${sharedChainInstruction(networkSelector, chain)}`,
+        )
+      }
+      confirmedBlockHash = walletConfirmedHash
+    }
+    return {
+      latestCommonBlockNumber,
+      latestCommonBlockHash: walletLatestCommonHash,
+      confirmedBlockNumber,
+      confirmedBlockHash,
+      headLag: headLag.toString(),
+    }
   } catch (error) {
     if (error instanceof WalletNetworkPreflightError) throw error
     const detail = error instanceof Error ? error.message : String(error)
@@ -301,32 +338,36 @@ export async function verifyInjectedWalletNetwork(
       (method, params) => providerRequest(provider, method, params, networkSelector),
       networkSelector,
       chain,
-      comparison.blockNumber,
+      comparison.latestCommonBlockNumber,
       'injected',
     )
     const officialIdentity = await readConsensusIdentity(
       (method, params) => officialRequest(referenceRequest, method, params, networkSelector),
       networkSelector,
       chain,
-      comparison.blockNumber,
+      comparison.latestCommonBlockNumber,
       'official',
     )
     if (walletIdentity.code !== officialIdentity.code) {
       throw new WalletNetworkPreflightError(
         'CONSENSUS_IDENTITY_MISMATCH',
-        `The wallet's Bradbury consensus bytecode does not match the official Bradbury RPC at stable block ${comparison.blockNumber}. Identical chain history is treated as equivalent execution state only when this contract identity also matches. ${sharedChainInstruction(networkSelector, chain)}`,
+        `The wallet's Bradbury consensus bytecode does not match the official Bradbury RPC at latest common block ${comparison.latestCommonBlockNumber}. Identical chain history is treated as equivalent execution state only when this contract identity also matches. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
     if (walletIdentity.probeResult !== officialIdentity.probeResult) {
       throw new WalletNetworkPreflightError(
         'CONSENSUS_IDENTITY_MISMATCH',
-        `The wallet's Bradbury consensus ABI probe does not match the official Bradbury RPC at stable block ${comparison.blockNumber}. ${sharedChainInstruction(networkSelector, chain)}`,
+        `The wallet's Bradbury consensus ABI probe does not match the official Bradbury RPC at latest common block ${comparison.latestCommonBlockNumber}. ${sharedChainInstruction(networkSelector, chain)}`,
       )
     }
     verification.consensusVersion = walletIdentity.consensusVersion
     verification.referenceConsensusVersion = officialIdentity.consensusVersion
-    verification.comparedBlockNumber = comparison.blockNumber
-    verification.comparedBlockHash = comparison.blockHash
+    verification.latestCommonBlockNumber = comparison.latestCommonBlockNumber
+    verification.latestCommonBlockHash = comparison.latestCommonBlockHash
+    verification.confirmedBlockNumber = comparison.confirmedBlockNumber
+    verification.confirmedBlockHash = comparison.confirmedBlockHash
+    verification.comparedBlockNumber = comparison.latestCommonBlockNumber
+    verification.comparedBlockHash = comparison.latestCommonBlockHash
     verification.comparedHeadLag = comparison.headLag
   } else {
     const identity = await readConsensusIdentity(
