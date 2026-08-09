@@ -3,8 +3,12 @@
 Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
 Contract.
 
-No v2 deployment or live consensus proof exists yet; persistent proof is
-restricted to authorized `testnetBradbury` runs.
+A Bradbury v2.1.1 deployment exists at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but persistent live consensus
+proof is incomplete. Keep `VITE_CONTRACT_ADDRESS` blank until mutation
+inconclusive, clear approval finality, and exact payout-delta checks pass.
+`AUDIT_REPORT.md` is an archival audit of the historical pre-v2 commit and its
+Studionet address; it is not an advertisement of the current frontend state.
 
 ## Safety model
 

@@ -6,6 +6,7 @@ import {
   transactionResultNumberToName,
   transactionsStatusNumberToName,
 } from 'genlayer-js/types'
+import { isTransientRpcFailure } from './live-rpc-error.mjs'
 
 const statusNumberFallback = {
   ...transactionsStatusNumberToName,
@@ -50,11 +51,6 @@ function normalizeNumber(value, mapping) {
   return /^\d+$/.test(key) ? (mapping[key] || '') : ''
 }
 
-function transientObservationError(error) {
-  const message = error instanceof Error ? error.message : String(error)
-  return /fetch failed|unknown rpc error|http request failed|eai_again|enotfound|econnreset|etimedout|socket|network/i.test(message)
-}
-
 async function waitWithTransientRetries({
   client,
   request,
@@ -68,7 +64,7 @@ async function waitWithTransientRetries({
     try {
       return await client.waitForTransactionReceipt(request)
     } catch (error) {
-      if (!transientObservationError(error) || attempt >= retries) throw error
+      if (!isTransientRpcFailure(error) || attempt >= retries) throw error
       attempt += 1
       onTransientError({
         attempt,

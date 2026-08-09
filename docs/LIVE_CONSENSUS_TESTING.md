@@ -4,9 +4,15 @@ This suite deploys the current contract source and exercises real leader plus
 validator consensus. Persistent settlement proof is restricted to
 `testnetBradbury`. Studionet is available only as an explicitly named
 smoke/demo mode: its balances and transfers are simulated and cannot satisfy
-the payout-proof gate. No deployment or live proof exists yet. The suite is
+the payout-proof gate. A Bradbury v2.1.1 deployment exists at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but persistent proof is still
+incomplete. The suite is
 intentionally excluded from CI because it spends funds, calls external
 evidence services, and creates persistent network state.
+
+`AUDIT_REPORT.md` is retained unchanged as an archival audit of historical
+commit `a09fe6a`; it does not describe the current deployed v2.1.1 contract or
+the incomplete proof artifact.
 
 ## Required setup
 
@@ -92,3 +98,12 @@ Public SDK/testnet APIs currently provide no supported way to fabricate a
 leader result while retaining real network validators. That scenario remains
 blocked until GenLayer supplies or authorizes an appropriate validator harness;
 the proof output records the limitation rather than claiming completion.
+
+The runner resumes exact stored bounty and submission IDs and validates their
+title, creator, poster, and evidence URI. It never reuses a bounty merely
+because a title matches. Mutation is crash-safe: `NOT_STARTED` is checkpointed
+before the webhook, then `PENDING` before POST and `CONFIRMED` after a
+successful response. A Worker state of `mutated` without a matching checkpoint,
+or `initial` after `CONFIRMED`, fails closed. Expired scenarios are expired or
+cancelled where permitted and replaced with unique titles using four-hour
+submission and evaluation windows.

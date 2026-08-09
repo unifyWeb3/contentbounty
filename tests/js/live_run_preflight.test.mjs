@@ -61,15 +61,98 @@ test('passes funded Bradbury recovery preflight without calling the mutation web
   assert.equal(calls.every((call) => call.init === undefined), true)
 })
 
+test('reconciles PENDING plus mutated without reporting mutable evidence as initial', async () => {
+  const { input } = options({
+    mutationCheckpoint: {
+      state: 'PENDING',
+      mutableEvidenceUri: 'https://evidence.example/mutable.txt',
+      pendingAt: '2026-08-09T00:00:00Z',
+    },
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname
+      if (path === '/healthz') return response('{"mutableState":"mutated"}', 'application/json')
+      if (path === '/approve.txt') return response(approval)
+      if (path === '/reject.txt') return response(rejection)
+      return response(mutable)
+    },
+  })
+  const result = await preflightLiveRun(input)
+  assert.equal(result.mutationState.state, 'CONFIRMED')
+  assert.equal(result.mutationWebhookCalled, true)
+  assert.equal(result.mutableEvidenceInitial, false)
+})
+
+test('reconciles CONFIRMED plus mutated without reporting mutable evidence as initial', async () => {
+  const { input } = options({
+    mutationCheckpoint: {
+      state: 'CONFIRMED',
+      mutableEvidenceUri: 'https://evidence.example/mutable.txt',
+    },
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname
+      if (path === '/healthz') return response('{"mutableState":"mutated"}', 'application/json')
+      if (path === '/approve.txt') return response(approval)
+      if (path === '/reject.txt') return response(rejection)
+      return response(mutable)
+    },
+  })
+  const result = await preflightLiveRun(input)
+  assert.equal(result.mutationState.state, 'CONFIRMED')
+  assert.equal(result.mutationWebhookCalled, true)
+  assert.equal(result.mutableEvidenceInitial, false)
+})
+
+test('fails closed for CONFIRMED plus initial and NOT_STARTED plus mutated', async () => {
+  await assert.rejects(preflightLiveRun(options({
+    mutationCheckpoint: { state: 'CONFIRMED', mutableEvidenceUri: 'https://evidence.example/mutable.txt' },
+  }).input), /still reports initial/)
+  await assert.rejects(preflightLiveRun(options({
+    fetchImpl: async (url) => {
+      const path = new URL(url).pathname
+      if (path === '/healthz') return response('{"mutableState":"mutated"}', 'application/json')
+      if (path === '/approve.txt') return response(approval)
+      if (path === '/reject.txt') return response(rejection)
+      return response(mutable)
+    },
+  }).input), /not initial|legitimate mutation checkpoint/)
+})
+
 test('rejects the exposed deployer before balances, endpoints, or writes', async () => {
   let balanceCalls = 0
   const { input, calls } = options({
     deployer: { address: '0x3d5915888E60CdaFFbB1F94DeeB71694F5de2a5d' },
     deployerClient: { getBalance: async () => { balanceCalls += 1; return 1n } },
   })
-  await assert.rejects(preflightLiveRun(input), /exposed account/)
+  await assert.rejects(preflightLiveRun(input), /compromised account/)
   assert.equal(balanceCalls, 0)
   assert.equal(calls.length, 0)
+})
+
+test('rejects the earlier compromised deployer before any balance lookup', async () => {
+  let balanceCalls = 0
+  const { input, calls } = options({
+    deployer: { address: '0x3211d1419709682b81c53CC51cb63622E25488d3' },
+    deployerClient: { getBalance: async () => { balanceCalls += 1; return 1n } },
+  })
+  await assert.rejects(preflightLiveRun(input), /compromised account/)
+  assert.equal(balanceCalls, 0)
+  assert.equal(calls.length, 0)
+})
+
+test('rejects either compromised address in the creator signing path before balances', async () => {
+  for (const address of [
+    '0x3211d1419709682b81c53CC51cb63622E25488d3',
+    '0x3d5915888E60CdaFFbB1F94DeeB71694F5de2a5d',
+  ]) {
+    let balanceCalls = 0
+    const { input, calls } = options({
+      creator: { address },
+      creatorClient: { getBalance: async () => { balanceCalls += 1; return 1n } },
+    })
+    await assert.rejects(preflightLiveRun(input), /compromised account/)
+    assert.equal(balanceCalls, 0)
+    assert.equal(calls.length, 0)
+  }
 })
 
 test('fails closed for underfunding, changed mutable state, or rejection mismatch', async () => {

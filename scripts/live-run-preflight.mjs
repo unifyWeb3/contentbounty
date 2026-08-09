@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { normalizeLiveEvidence } from './live-adversarial-fixture.mjs'
+import { reconcileMutationState } from './live-mutation-state.mjs'
+import { COMPROMISED_DEPLOYER_ADDRESSES, assertSafeDeployerAddress } from './deployer-guard.mjs'
 
-export const EXPOSED_DEPLOYER_ADDRESSES = Object.freeze([
-  '0x3d5915888e60cdaffbb1f94deeb71694f5de2a5d',
-])
+export const EXPOSED_DEPLOYER_ADDRESSES = COMPROMISED_DEPLOYER_ADDRESSES
 
 const DEFAULT_GAS_RESERVE_WEI = 10_000_000_000_000_000n
 
@@ -67,6 +67,7 @@ export async function preflightLiveRun({
   transientRetries = 5,
   transientRetryInterval = 2000,
   sleep,
+  mutationCheckpoint,
 }) {
   if (network !== 'testnetBradbury' || proofMode !== 'persistent') {
     throw new Error('Persistent recovery preflight requires testnetBradbury with LIVE_PROOF_MODE=persistent')
@@ -74,9 +75,8 @@ export async function preflightLiveRun({
   const deployerAddress = deployer.address.toLowerCase()
   const creatorAddress = creator.address.toLowerCase()
   if (deployerAddress === creatorAddress) throw new Error('Live deployer and creator accounts must be distinct')
-  if (EXPOSED_DEPLOYER_ADDRESSES.includes(deployerAddress)) {
-    throw new Error('The configured deployer is the exposed account and must not sign again; install the rotated funded key in .env')
-  }
+  assertSafeDeployerAddress(deployer.address)
+  assertSafeDeployerAddress(creator.address, 'creator signer')
 
   const approvalUrl = httpsUrl(approvalUri, 'LIVE_APPROVE_EVIDENCE_URI')
   const rejectionUrl = httpsUrl(rejectionUri, 'LIVE_REJECT_EVIDENCE_URI')
@@ -124,9 +124,7 @@ export async function preflightLiveRun({
   } catch {
     throw new Error('Evidence health check returned malformed JSON')
   }
-  if (health.mutableState !== 'initial') {
-    throw new Error(`Mutable evidence is not initial; current state is ${health.mutableState ?? 'UNKNOWN'}`)
-  }
+  const mutation = reconcileMutationState(mutationCheckpoint, health.mutableState, mutableUri)
   if (!approvalText.includes('CONTENT BOUNTY LIVE PASS') || !approvalText.includes('https://docs.genlayer.com/')) {
     throw new Error('Approval evidence is missing one or more required live-rubric facts')
   }
@@ -151,7 +149,8 @@ export async function preflightLiveRun({
     health: { mutableState: health.mutableState },
     rejection: { normalizedSha256: rejectionSha256, characterCount: normalizedRejection.length },
     approvalFactsVerified: true,
-    mutableEvidenceInitial: true,
-    mutationWebhookCalled: false,
+    mutableEvidenceInitial: health.mutableState === 'initial',
+    mutationWebhookCalled: mutation.state === 'CONFIRMED',
+    mutationState: mutation,
   }
 }

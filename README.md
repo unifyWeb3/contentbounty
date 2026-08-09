@@ -16,8 +16,11 @@ evaluation. Deterministic contract code—not model prose—derives the verdict 
 controls settlement.
 
 The historical v0.2 Studionet deployment is not compatible with this contract
-or frontend. No v2 deployment is claimed until a finalized address and
-transaction hash are recorded in `IMPLEMENTATION_LOG.md`.
+or frontend. A v2.1.1 Bradbury deployment exists at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` (deployment transaction
+`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93`), but
+persistent proof is incomplete. The frontend remains unconfigured until the
+mutation, approval, and exact payout checks make `proofComplete=true`.
 
 ## Why GenLayer
 
@@ -146,7 +149,7 @@ docs/LIVE_CONSENSUS_TESTING.md    authorized live-proof procedure
 frontend/                         external-signer Vue application
 deploy.mjs                        validated multi-network deployment helper
 IMPLEMENTATION_LOG.md             auditable implementation-session record
-AUDIT_REPORT.md                    immutable source audit and handoff
+AUDIT_REPORT.md                    archival audit of the historical `a09fe6a` commit; not current v2 state
 ```
 
 ## Verify the contract

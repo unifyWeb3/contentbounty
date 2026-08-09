@@ -1507,3 +1507,185 @@ npm run test:live (authorized recovery attempts)
 - `proofComplete` remains false. No frontend contract configuration or frontend
   hosting update has been made because the persistent payout-proof gate is not
   complete.
+
+## 2026-08-09 — crash-safe mutation and deadline-aware live-proof recovery
+
+### Review findings and decisions
+
+- The existing proof artifact contained a manually introduced
+  `BLOCKED_EXTERNAL_RPC` status whose failure timestamp was later than
+  `updatedAt`. The committed runner now owns this transition, timestamps the
+  failure before the atomic checkpoint, and safely resets it to `RUNNING` on
+  resume.
+- Mutation now uses an explicit `NOT_STARTED` / `PENDING` / `CONFIRMED` state
+  machine. `PENDING`, including the exact mutable evidence URI, is durably
+  checkpointed before webhook POST. A restart reconciles `PENDING + mutated`
+  to `CONFIRMED` without reposting; `mutated` without a checkpoint and
+  `initial + CONFIRMED` fail closed.
+- Scenario recovery is keyed by stored bounty/submission IDs and validates
+  title, poster, creator, URI, and transaction identity. New mutable and
+  approval scenarios use unique titles and four-hour submission plus four-hour
+  evaluation windows. Expired scenarios are not selected by title.
+- Both known exposed deployer addresses are rejected before balances or any
+  signing path: `0x3211d1419709682b81c53CC51cb63622E25488d3` and
+  `0x3d5915888E60CdaFFbB1F94DeeB71694F5de2a5d`.
+- The Bradbury deployment is live at
+  `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, while persistent proof remains
+  incomplete. The frontend address stays blank until `proofComplete=true`.
+
+### Current authoritative live state before continuation
+
+- Replacement mutable submission transaction
+  `0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be`
+  is independently verified `FINALIZED / AGREE / FINISHED_WITH_RETURN` and maps
+  to on-chain submission ID 1.
+- Worker state remains `initial`; the mutation webhook has not been called.
+- The original mutable bounty evaluation deadline is
+  `2026-08-09T06:31:08Z`; the runner performs a read-only chain-time check and
+  either resumes the exact stored scenario or expires and replaces it safely.
+- `proofComplete=false`; no frontend contract address is configured yet.
+
+### 2026-08-09 — offline recovery hardening verification
+
+The recovery hardening changes are uncommitted in the working tree pending
+authorized continuation. They add the crash-safe mutation state machine,
+deadline-aware exact-ID scenario recovery, the second exposed-deployer
+blocklist entry, committed external-RPC blocker checkpoint/resume behavior,
+and lifecycle convenience-field checkpointing.
+
+Exact verification results:
+
+```text
+npm run check:contract
+=> PASS; semantic lint (3 checks) and contract validation passed.
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std npm run test:contract -- --quiet
+=> PASS; 29 Direct Mode tests passed in 4.65s.
+
+npm run test:evidence -- --quiet
+=> PASS; 3 tests passed.
+npm run test:network
+=> PASS; 3 test files, 0 failed.
+npm run test:hosting
+=> PASS; 1 test file, 0 failed.
+npm run test:lifecycle
+=> PASS; 7 test files, 0 failed.
+
+PATH=frontend/node_modules/.bin:$PATH npm --prefix frontend test -- --run
+=> PASS; 4 test files, 67 tests passed.
+
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= npm run build:frontend
+=> PASS; production bundle built.
+npm run verify:frontend-bundle
+=> PASS; 8 files scanned, historical v0.2 address absent.
+
+git diff --check
+=> PASS.
+```
+
+The clean frontend install required removing an incomplete generated
+`frontend/node_modules` directory left by the restricted sandbox and rerunning
+`npm ci --include=dev`; no package manifests or lockfiles were changed. The
+current proof artifact remains `BLOCKED_EXTERNAL_RPC` with
+`proofComplete=false`; the Worker remains `initial` and the mutation webhook
+has not been called. No new live transaction has been submitted during this
+offline remediation.
+
+### 2026-08-09 — authorized recovery continuation stopped at external RPC blocker
+
+Secret-safe Bradbury preflight passed immediately before continuation:
+
+- network `testnetBradbury`, proof mode `persistent`;
+- deployer `0x381b78F0C90a29cE2acDB718a9A4E1387004D3c7` and creator
+  `0x7fD87C28F4345ee8A4124511e16084464ca2E123` are distinct;
+- read-only balances were `23994270408695601250` wei and
+  `1999497892899400940` wei respectively;
+- approval facts passed; rejection normalized SHA-256 remained
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537` with
+  1,092 characters;
+- Worker health remained `mutableState=initial`; mutation webhook was not
+  called.
+
+The authoritative `npm run test:live` recovery runner did not deploy another
+contract and did not submit mutable or approval evidence. It read the exact
+stored mutable bounty/submission (bounty ID 1, submission ID 1), observed the
+documented evaluation deadline had passed, and submitted the authorized
+deadline-safe expiration transaction:
+
+`0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4`
+
+The run then stopped while observing that transaction through Bradbury
+consensus-data RPC (`getTransactionData` returned repeated `fetch failed`). The
+artifact was atomically checkpointed at
+`/tmp/contentbounty-live-consensus-proof.json` with mode 0600, status
+`BLOCKED_EXTERNAL_RPC`, `proofComplete=false`, and completion checks:
+
+```json
+{
+  "deploymentFinalized": true,
+  "clearRejection": true,
+  "adversarialRejectionVerified": true,
+  "mutationInconclusive": false,
+  "clearApprovalFinalized": false,
+  "persistentPayoutDelta": false
+}
+```
+
+Mutation state remains `NOT_STARTED` for the exact mutable URI. No mutation
+webhook call, mutable evaluation, approval bounty, approval submission,
+approval evaluation, payout, frontend contract configuration, commit, or push
+occurred in this continuation. Do not rerun until read-only Bradbury access is
+stable and the expiration transaction is independently confirmed; then resume
+the same proof artifact without duplicating it.
+
+### 2026-08-09 — offline hardening committed before live continuation
+
+Additional offline review fixes completed before any new signed live action:
+
+- Added `scripts/deployer-guard.mjs` as the shared compromised-account guard.
+  It rejects both exposed addresses before live balance reads, deployment
+  client creation, `deployContract`, or creator signing activity.
+- Proof-artifact loading now normalizes every transaction's accepted/finalized
+  convenience fields from observations, including legacy inconsistent records,
+  before resume/checkpoint.
+- Preflight metadata now reports `mutableEvidenceInitial=false` after a valid
+  `PENDING/CONFIRMED + mutated` reconciliation and fails closed for the other
+  three state combinations.
+- Proof provenance now separates deployed source commit/SHA-256 from runner
+  commit and runner dirty state. The deployed source commit is the full
+  `f29acfcf7eacace94eaa1f4601abf832f60e6898` commit; the runner provenance is
+  captured at artifact creation/resume.
+- README, frontend README, and live-proof documentation now identify
+  `AUDIT_REPORT.md` as an archival audit of historical commit `a09fe6a`; the
+  audit file itself remains unchanged.
+
+Offline results before commit:
+
+```text
+npm run check:contract
+=> PASS; 3 semantic checks and contract validation.
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std npm run test:contract -- --quiet
+=> PASS; 29 Direct Mode tests in 9.50s.
+npm run test:evidence -- --quiet
+=> PASS; 3 tests.
+npm run test:network
+=> PASS; 4 files, including deployer guard.
+npm run test:lifecycle
+=> PASS; 8 files, 0 failed.
+npm run test:hosting
+=> PASS; 1 file, 0 failed.
+npm --prefix frontend test -- --run
+=> PASS; 4 files, 67 tests.
+(cd frontend && ./node_modules/.bin/vue-tsc -b --pretty false)
+=> PASS.
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= npm run build:frontend
+=> PASS; production bundle built.
+npm run verify:frontend-bundle
+=> PASS; 8 files scanned, historical address absent.
+node --check deploy.mjs scripts/deployer-guard.mjs scripts/live-provenance.mjs tests/integration/live_consensus.mjs
+=> PASS.
+js-yaml .github/workflows/ci.yml
+=> PASS.
+git diff --check; git diff --quiet -- AUDIT_REPORT.md
+=> PASS.
+```

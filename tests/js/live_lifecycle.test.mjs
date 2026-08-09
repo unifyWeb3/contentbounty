@@ -143,3 +143,14 @@ test('fails closed after bounded transient lifecycle retries', async () => {
   }), /fetch failed/)
   assert.equal(calls, 3)
 })
+
+test('keeps accepted and finalized convenience fields aligned at each observation', async () => {
+  const transaction = { observations: [], acceptedPhaseObserved: false, successfulFinalizationObserved: false }
+  const { recordTransactionObservation } = await import('../../scripts/live-proof-store.mjs')
+  recordTransactionObservation(transaction, { phase: 'ACCEPTED', observedAt: '2026-08-07T00:00:00Z' })
+  assert.equal(transaction.acceptedPhaseObserved, true)
+  assert.equal(transaction.finalized, null)
+  recordTransactionObservation(transaction, { phase: 'FINALIZED', observedAt: '2026-08-07T00:00:01Z' })
+  assert.equal(transaction.successfulFinalizationObserved, true)
+  assert.equal(transaction.finalized.phase, 'FINALIZED')
+})

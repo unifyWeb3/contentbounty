@@ -12,6 +12,7 @@ import {
   transactionsStatusNumberToName,
 } from 'genlayer-js/types'
 import { selectDeploymentMode, selectGenLayerNetwork } from './scripts/genlayer-network.mjs'
+import { assertSafeDeployerAccount } from './scripts/deployer-guard.mjs'
 
 function gitValue(args) {
   try {
@@ -56,7 +57,14 @@ function summarizeReceipt(receipt) {
   }
 }
 
-async function main() {
+export function guardedDeploymentAccount(privateKey, createAccountImpl = createAccount) {
+  return assertSafeDeployerAccount(createAccountImpl(privateKey))
+}
+
+export async function main({
+  createAccountImpl = createAccount,
+  createClientImpl = createClient,
+} = {}) {
   const configuredNetwork = process.env.GENLAYER_NETWORK?.trim()
   if (!configuredNetwork) {
     throw new Error('GENLAYER_NETWORK is required. Use testnetBradbury for persistent deployment or studionet with GENLAYER_DEPLOY_MODE=studionet-smoke.')
@@ -72,11 +80,13 @@ async function main() {
   const code = readFileSync(sourcePath, 'utf8')
   const sourceDigest = createHash('sha256').update(code, 'utf8').digest('hex')
   const sourceCommit = gitValue(['rev-parse', 'HEAD'])
+  const runnerCommit = gitValue(['rev-parse', 'HEAD'])
+  const runnerDirty = gitValue(['status', '--porcelain'])
   const sourceDirty = gitValue(['status', '--porcelain', '--', 'contracts/content_bounty.py'])
   const rpcUrl = chain.rpcUrls.default.http[0]
   const explorerUrl = chain.blockExplorers.default.url.replace(/\/$/, '')
-  const account = createAccount(privateKey)
-  const client = createClient({ chain })
+  const account = guardedDeploymentAccount(privateKey, createAccountImpl)
+  const client = createClientImpl({ chain })
 
   console.log('Network selector:', networkSelector)
   console.log('Deployment mode:', deploymentMode.mode)
@@ -90,6 +100,8 @@ async function main() {
   console.log('Source:', sourcePath)
   console.log('Source SHA-256:', sourceDigest)
   console.log('Source commit:', sourceCommit)
+  console.log('Runner commit:', runnerCommit)
+  console.log('Runner dirty:', runnerDirty === 'unavailable' ? 'unknown' : runnerDirty ? 'yes' : 'no')
   console.log('Contract source dirty:', sourceDirty === 'unavailable' ? 'unknown' : sourceDirty ? 'yes' : 'no')
   console.log('Deploying from:', account.address)
 
@@ -131,7 +143,9 @@ async function main() {
   console.log('Record the network, address, transaction hash, source commit, and source digest in IMPLEMENTATION_LOG.md.')
 }
 
-main().catch((error) => {
-  console.error('Deployment failed:', error?.message ?? error)
-  process.exitCode = 1
-})
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error('Deployment failed:', error?.message ?? error)
+    process.exitCode = 1
+  })
+}
