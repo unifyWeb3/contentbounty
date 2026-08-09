@@ -39,9 +39,14 @@ import { isTransientRpcFailure } from '../../scripts/live-rpc-error.mjs'
 import { assertSafeDeployerAccount } from '../../scripts/deployer-guard.mjs'
 import {
   collectRunnerProvenance,
-  DEPLOYED_SOURCE_COMMIT,
   selectDeployedSourceProvenance,
 } from '../../scripts/live-provenance.mjs'
+import {
+  ensureScenarioBounty,
+  ensureScenarioClosure,
+  ensureScenarioEvaluation,
+  ensureScenarioSubmission,
+} from '../../scripts/live-scenario-executor.mjs'
 
 const requiredNames = [
   'LIVE_GENLAYER_NETWORK',
@@ -85,24 +90,29 @@ function explorerBase(chain) {
   return chain.blockExplorers.default.url.replace(/\/$/, '')
 }
 
-function latestUsableTransaction(proof, label) {
-  return [...proof.transactions].reverse().find((item) =>
+function uniqueUsableTransaction(proof, label) {
+  const matches = proof.transactions.filter((item) =>
     item.label === label
     && typeof item.hash === 'string'
     && item.status !== 'EVM_REVERTED_OR_NOT_PROCESSED'
     && item.observations?.at(-1)?.phase !== 'FAILED')
+  if (matches.length > 1) throw new Error(`Multiple usable transactions match recovery label ${label}`)
+  return matches[0] ?? null
 }
 
-function scenarioTransaction(proof, hash, fallbackLabel) {
-  if (hash) {
-    const exact = proof.transactions.find((item) => item.hash?.toLowerCase() === hash.toLowerCase())
-    if (!exact) throw new Error(`Stored transaction ${hash} is absent from the proof artifact`)
-    return exact
+function exactScenarioTransaction(proof, hash, label) {
+  const transaction = proof.transactions.find((item) => item.hash?.toLowerCase() === hash.toLowerCase())
+  if (!transaction) throw new Error(`Stored transaction ${hash} is absent from the proof artifact`)
+  if (transaction.label !== label) {
+    throw new Error(`Stored transaction ${hash} label ${transaction.label || 'MISSING'} does not match ${label}`)
   }
-  return latestUsableTransaction(proof, fallbackLabel)
+  if (transaction.status === 'EVM_REVERTED_OR_NOT_PROCESSED' || transaction.observations?.at(-1)?.phase === 'FAILED') {
+    throw new Error(`Stored transaction ${hash} is failed and cannot recover ${label}`)
+  }
+  return transaction
 }
 
-function recoverExistingScenarioRecords(proof) {
+export function recoverExistingScenarioRecords(proof, mutableEvidenceUri = process.env.LIVE_MUTABLE_EVIDENCE_URI) {
   const rejection = proof.scenarios.clearRejection?.submission
   if (!proof.scenarios.clearRejectionScenario && rejection) {
     proof.scenarios.clearRejectionScenario = {
@@ -113,26 +123,40 @@ function recoverExistingScenarioRecords(proof) {
         generatedAt: proof.generatedAt,
       }),
       title: 'Live clear rejection',
-      bountyId: Number(rejection.bounty_id),
-      submissionId: Number(rejection.id),
+      bountyId: null,
+      submissionId: null,
       postTransaction: proof.transactions.find((item) => item.label === 'post Live clear rejection')?.hash ?? null,
       submissionTransaction: proof.transactions.find((item) => item.label === 'submit clear rejection evidence')?.hash ?? null,
       evaluationTransaction: proof.transactions.find((item) => item.label === 'evaluate clear rejection')?.hash ?? null,
     }
   }
   if (!proof.scenarios.mutationScenario && proof.transactions.some((item) => item.label === 'post Live mutation inconclusive')) {
+    const closureTransaction = uniqueUsableTransaction(proof, 'expire Live mutation inconclusive')
     proof.scenarios.mutationScenario = {
       ...createScenarioRecord({
         scenarioKey: 'mutation',
         baseTitle: 'Live mutation inconclusive',
-        evidenceUri: process.env.LIVE_MUTABLE_EVIDENCE_URI,
+        evidenceUri: mutableEvidenceUri,
         generatedAt: proof.generatedAt,
       }),
       title: 'Live mutation inconclusive',
-      bountyId: 1,
-      submissionId: 1,
+      bountyId: null,
+      submissionId: null,
       postTransaction: proof.transactions.find((item) => item.label === 'post Live mutation inconclusive')?.hash ?? null,
       submissionTransaction: proof.transactions.filter((item) => item.label === 'submit mutable evidence').at(-1)?.hash ?? null,
+      closureAction: closureTransaction ? 'EXPIRE' : null,
+      closureTransaction: closureTransaction?.hash ?? null,
+    }
+  }
+  const mutationScenario = proof.scenarios.mutationScenario
+  if (mutationScenario && !mutationScenario.closureTransaction) {
+    const closureTransaction = uniqueUsableTransaction(proof, `expire ${mutationScenario.title}`)
+    if (closureTransaction) {
+      proof.scenarios.mutationScenario = {
+        ...mutationScenario,
+        closureAction: 'EXPIRE',
+        closureTransaction: closureTransaction.hash,
+      }
     }
   }
   return proof
@@ -197,11 +221,25 @@ async function latestChainTimestamp(client) {
   return timestamp
 }
 
-async function writeAndFinalize(client, account, chain, proof, checkpoint, request, label) {
+async function submitWrite(client, account, chain, proof, checkpoint, request, label, onSubmitted = () => {}) {
   try {
     const hash = await client.writeContract({ account, ...request })
-    await waitLifecycle(client, hash, label, chain, proof, checkpoint)
-    return hash
+    if (!proof.transactions.some((item) => item.hash?.toLowerCase() === hash.toLowerCase())) {
+      proof.transactions.push({
+        label,
+        hash,
+        explorer: `${explorerBase(chain)}/tx/${hash}`,
+        observations: [],
+        acceptedPhaseObserved: false,
+        successfulFinalizationObserved: false,
+        separateAcceptedAndFinalizedObservations: false,
+        accepted: null,
+        finalized: null,
+      })
+    }
+    onSubmitted(hash)
+    checkpoint()
+    return { hash, label }
   } catch (error) {
     const message = error?.message ?? String(error)
     const evmHash = message.match(/EVM tx (0x[0-9a-fA-F]{64})/i)?.[1]
@@ -244,8 +282,20 @@ export async function main() {
   const recovery = configuredRecovery()
   const runner = collectRunnerProvenance()
   const sourceSha256 = createHash('sha256').update(code).digest('hex')
+  const loadedProof = loadProofArtifact(output)
+  const storedProof = recovery ? validateRecoveryProofArtifact(loadedProof, {
+    network,
+    deploymentTransaction: recovery.transaction,
+    contractAddress: recovery.address,
+    sourceSha256,
+    deployer: deployer.address,
+    creator: creator.address,
+  }) : null
+  if (recovery && !storedProof?.deployedSource?.commit && !storedProof?.sourceCommit) {
+    throw new Error('Recovery proof artifact lacks deployment-time source commit provenance')
+  }
   const deployedSource = selectDeployedSourceProvenance({
-    recovery,
+    storedProof,
     runnerCommit: runner.commit,
     sourceSha256,
   })
@@ -286,14 +336,6 @@ export async function main() {
       fabricatedLeaderDisagreement: 'The public SDK/testnets expose no leader-result fabrication hook; use an authorized validator harness when GenLayer provides one.',
     },
   }
-  const storedProof = recovery ? validateRecoveryProofArtifact(loadProofArtifact(output), {
-    network,
-    deploymentTransaction: recovery.transaction,
-    contractAddress: recovery.address,
-    sourceSha256: initialProof.sourceSha256,
-    deployer: deployer.address,
-    creator: creator.address,
-  }) : null
   const proof = createProofArtifact(output, storedProof ? {
     ...initialProof,
     ...storedProof,
@@ -405,136 +447,192 @@ export async function main() {
       { id: 'c2', requirement: 'The evidence links to https://docs.genlayer.com/.' },
     ])
 
+    function scenarioProofKey(scenario) {
+      if (scenario.scenarioKey === 'clear-rejection') return 'clearRejectionScenario'
+      if (scenario.scenarioKey === 'mutation') return 'mutationScenario'
+      if (scenario.scenarioKey === 'clear-approval') return 'approvalScenario'
+      throw new Error(`Unknown scenario key ${scenario.scenarioKey}`)
+    }
+
+    function checkpointScenarioRecord(scenario) {
+      proof.scenarios[scenarioProofKey(scenario)] = scenario
+      checkpoint()
+    }
+
+    function transactionForScenario(hash, label) {
+      if (hash) {
+        return exactScenarioTransaction(proof, hash, label)
+      }
+      return uniqueUsableTransaction(proof, label)
+    }
+
+    async function waitScenarioTransaction(client, transaction, label) {
+      const existing = proof.transactions.find((item) =>
+        item.hash?.toLowerCase() === transaction.hash.toLowerCase())
+      return waitLifecycle(
+        client,
+        transaction.hash,
+        existing?.label ?? transaction.label ?? label,
+        chain,
+        proof,
+        checkpoint,
+        existing ?? null,
+      )
+    }
+
     async function postScenario(scenario) {
-      const existingBounties = await readAll(deployerClient, address, 'get_bounties_page')
-      const existing = scenario.bountyId === null
-        ? null
-        : existingBounties.find((item) => Number(item.id) === Number(scenario.bountyId))
-      if (existing) {
-        validateStoredBountyScenario(scenario, existing, deployer.address)
-        const transactionProof = scenarioTransaction(proof, scenario.postTransaction, `post ${scenario.title}`)
-        if (!transactionProof) {
-          throw new Error(`Bounty ${scenario.title} already exists but its post transaction is absent from the proof artifact`)
+      checkpointScenarioRecord(scenario)
+      if (scenario.bountyId !== null) {
+        if (!scenario.postTransaction) {
+          throw new Error(`Stored bounty ${scenario.title} has no post transaction; refusing ambiguous recovery`)
         }
-        await waitLifecycle(
+        await waitScenarioTransaction(
           deployerClient,
-          transactionProof.hash,
-          transactionProof.label,
-          chain,
-          proof,
-          checkpoint,
-          transactionProof,
+          transactionForScenario(scenario.postTransaction, `post ${scenario.title}`),
+          `post ${scenario.title}`,
         )
-        return { ...scenario, ...existing, bountyId: Number(existing.id) }
-      }
-      await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, {
-        address,
-        functionName: 'post_bounty',
-        args: [scenario.title, 'Live consensus integration evidence.', rubric, BRADBURY_SCENARIO_WINDOW_SECONDS, BRADBURY_SCENARIO_WINDOW_SECONDS],
-        value: reward,
-      }, `post ${scenario.title}`)
-      const bounties = await readAll(deployerClient, address, 'get_bounties_page')
-      const created = bounties.find((item) => item.title === scenario.title && item.poster?.toLowerCase() === deployer.address.toLowerCase())
-      if (!created) throw new Error(`Posted scenario ${scenario.title} was not found by exact title`)
-      return { ...scenario, bountyId: Number(created.id), postTransaction: latestUsableTransaction(proof, `post ${scenario.title}`)?.hash ?? null }
-    }
-
-    async function submitScenario(scenario, label) {
-      const existingActivity = await readAll(
-        creatorClient,
-        address,
-        'get_creator_submissions_page',
-        [creator.address],
-      )
-      const existing = scenario.submissionId === null
-        ? null
-        : existingActivity.find((item) => Number(item.id) === Number(scenario.submissionId))
-      if (existing) {
-        const transactionProof = scenarioTransaction(proof, scenario.submissionTransaction, label)
-        if (!transactionProof) {
-          throw new Error(`Submission for bounty ${scenario.bountyId} exists but its transaction is absent from the proof artifact`)
-        }
-        await waitLifecycle(
-          creatorClient,
-          transactionProof.hash,
-          transactionProof.label,
-          chain,
-          proof,
-          checkpoint,
-          transactionProof,
-        )
-        validateStoredSubmissionScenario(scenario, existing, creator.address)
-        return { ...scenario, submissionId: Number(existing.id) }
-      }
-      await writeAndFinalize(creatorClient, creator, chain, proof, checkpoint, {
-        address,
-        functionName: 'submit_content',
-        args: [scenario.bountyId, scenario.evidenceUri],
-      }, label)
-      const activity = await readAll(
-        creatorClient,
-        address,
-        'get_creator_submissions_page',
-        [creator.address],
-      )
-      const created = activity.find((item) => Number(item.bounty_id) === Number(scenario.bountyId) && item.evidence_uri === scenario.evidenceUri)
-      if (!created) throw new Error(`Submission for exact bounty ${scenario.bountyId} was not found`)
-      return { ...scenario, submissionId: Number(created.id), submissionTransaction: latestUsableTransaction(proof, label)?.hash ?? null }
-    }
-
-    async function evaluateAndRead(submissionId, label) {
-      const existingTransaction = latestUsableTransaction(proof, label)
-      if (existingTransaction) {
-        await waitLifecycle(
-          deployerClient,
-          existingTransaction.hash,
-          existingTransaction.label,
-          chain,
-          proof,
-          checkpoint,
-          existingTransaction,
-        )
-        return deployerClient.readContract({
-          address,
-          functionName: 'get_submission',
-          args: [submissionId],
-        })
-      }
-      await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, {
-        address,
-        functionName: 'evaluate_submission',
-        args: [submissionId],
-      }, label)
-      return deployerClient.readContract({
-        address,
-        functionName: 'get_submission',
-        args: [submissionId],
-      })
-    }
-
-    async function reconcileScenarioClosure(scenario, bountyState, action) {
-      if (scenario.bountyId === null) return { scenario, bounty: bountyState, action }
-      const closureLabel = action.action === 'CANCEL_AND_REPLACE'
-        ? `cancel ${scenario.title}`
-        : `expire ${scenario.title}`
-      const closureTransaction = latestUsableTransaction(proof, closureLabel)
-      if (closureTransaction) {
-        await waitLifecycle(
-          deployerClient,
-          closureTransaction.hash,
-          closureTransaction.label,
-          chain,
-          proof,
-          checkpoint,
-          closureTransaction,
-        )
-        const refreshedBounty = await deployerClient.readContract({
+        const existing = await deployerClient.readContract({
           address,
           functionName: 'get_bounty',
           args: [scenario.bountyId],
         })
-        return {
+        scenario = validateStoredBountyScenario(scenario, existing, deployer.address)
+        checkpointScenarioRecord(scenario)
+        return scenario
+      }
+      const label = `post ${scenario.title}`
+      return ensureScenarioBounty({
+        scenario,
+        listBounties: () => readAll(deployerClient, address, 'get_bounties_page'),
+        poster: deployer.address,
+        findTransaction: (hash) => transactionForScenario(hash, label),
+        findStoredTransaction: () => transactionForScenario(null, label),
+        waitTransaction: (transaction) => waitScenarioTransaction(deployerClient, transaction, label),
+        submitPost: () => submitWrite(deployerClient, deployer, chain, proof, checkpoint, {
+          address,
+          functionName: 'post_bounty',
+          args: [scenario.title, 'Live consensus integration evidence.', rubric, BRADBURY_SCENARIO_WINDOW_SECONDS, BRADBURY_SCENARIO_WINDOW_SECONDS],
+          value: reward,
+        }, label, (hash) => {
+          proof.scenarios[scenarioProofKey(scenario)] = { ...scenario, postTransaction: hash }
+        }),
+        checkpointScenario: checkpointScenarioRecord,
+      })
+    }
+
+    async function submitScenario(scenario, label) {
+      checkpointScenarioRecord(scenario)
+      if (scenario.submissionId !== null) {
+        if (!scenario.submissionTransaction) {
+          throw new Error(`Stored submission ${scenario.submissionId} has no submission transaction; refusing ambiguous recovery`)
+        }
+        await waitScenarioTransaction(
+          creatorClient,
+          transactionForScenario(scenario.submissionTransaction, label),
+          label,
+        )
+        const existing = await creatorClient.readContract({
+          address,
+          functionName: 'get_submission',
+          args: [scenario.submissionId],
+        })
+        scenario = validateStoredSubmissionScenario(scenario, existing, creator.address)
+        checkpointScenarioRecord(scenario)
+        return scenario
+      }
+      return ensureScenarioSubmission({
+        scenario,
+        listSubmissions: () => readAll(
+          creatorClient,
+          address,
+          'get_creator_submissions_page',
+          [creator.address],
+        ),
+        creator: creator.address,
+        findTransaction: (hash) => transactionForScenario(hash, label),
+        findStoredTransaction: () => transactionForScenario(null, label),
+        waitTransaction: (transaction) => waitScenarioTransaction(creatorClient, transaction, label),
+        submitContent: () => submitWrite(creatorClient, creator, chain, proof, checkpoint, {
+          address,
+          functionName: 'submit_content',
+          args: [scenario.bountyId, scenario.evidenceUri],
+        }, label, (hash) => {
+          proof.scenarios[scenarioProofKey(scenario)] = { ...scenario, submissionTransaction: hash }
+        }),
+        checkpointScenario: checkpointScenarioRecord,
+      })
+    }
+
+    async function evaluateScenario(scenario, label) {
+      const result = await ensureScenarioEvaluation({
+        scenario,
+        findTransaction: (hash) => hash ? transactionForScenario(hash, label) : null,
+        waitTransaction: (transaction) => waitScenarioTransaction(deployerClient, transaction, label),
+        submitEvaluation: () => submitWrite(deployerClient, deployer, chain, proof, checkpoint, {
+          address,
+          functionName: 'evaluate_submission',
+          args: [scenario.submissionId],
+        }, label, (hash) => {
+          proof.scenarios[scenarioProofKey(scenario)] = { ...scenario, evaluationTransaction: hash }
+        }),
+        readSubmission: () => deployerClient.readContract({
+          address,
+          functionName: 'get_submission',
+          args: [scenario.submissionId],
+        }),
+        checkpointScenario: checkpointScenarioRecord,
+      })
+      checkpointScenarioRecord(result.scenario)
+      return result
+    }
+
+    async function reconcileScenarioClosure(scenario, bountyState, action) {
+      if (scenario.bountyId === null) return { scenario, bounty: bountyState, action }
+      const closureAction = action.action === 'CANCEL_AND_REPLACE' || action.reason === 'CANCELLED'
+        ? 'CANCEL'
+        : 'EXPIRE'
+      const closureLabel = closureAction === 'CANCEL'
+        ? `cancel ${scenario.title}`
+        : `expire ${scenario.title}`
+      const needsClosure = action.action === 'EXPIRE_AND_REPLACE'
+        || action.action === 'CANCEL_AND_REPLACE'
+        || (action.action === 'TERMINAL' && ['EXPIRED', 'CANCELLED'].includes(action.reason))
+      if (needsClosure) {
+        const closedScenario = await ensureScenarioClosure({
           scenario,
+          action: closureAction,
+          findTransaction: (hash) => transactionForScenario(hash, closureLabel),
+          findStoredTransaction: () => transactionForScenario(null, closureLabel),
+          waitTransaction: (transaction) => waitScenarioTransaction(deployerClient, transaction, closureLabel),
+          submitClosure: action.action === 'TERMINAL' ? null : () => submitWrite(
+            deployerClient,
+            deployer,
+            chain,
+            proof,
+            checkpoint,
+            {
+              address,
+              functionName: closureAction === 'CANCEL' ? 'cancel_bounty' : 'expire_bounty',
+              args: [scenario.bountyId],
+            },
+            closureLabel,
+            (hash) => {
+              proof.scenarios[scenarioProofKey(scenario)] = {
+                ...scenario,
+                closureAction,
+                closureTransaction: hash,
+              }
+            },
+          ),
+          checkpointScenario: checkpointScenarioRecord,
+        })
+        const refreshedBounty = await deployerClient.readContract({
+          address,
+          functionName: 'get_bounty',
+          args: [closedScenario.bountyId],
+        })
+        return {
+          scenario: closedScenario,
           bounty: refreshedBounty,
           action: scenarioDeadlineAction({
             bounty: refreshedBounty,
@@ -577,7 +675,9 @@ export async function main() {
         `Hosted adversarial rejection fixture hash mismatch: expected ${adversarialFixture.expectedNormalizedSha256}, got ${commitmentVerification.observedOnChainSha256 || 'MISSING'}`,
       )
     }
-    const rejected = await evaluateAndRead(rejectSubmission, 'evaluate clear rejection')
+    const rejectedEvaluation = await evaluateScenario(rejectSubmissionRecord, 'evaluate clear rejection')
+    proof.scenarios.clearRejectionScenario = rejectedEvaluation.scenario
+    const rejected = rejectedEvaluation.submission
     if (rejected.status !== 'REJECTED') throw new Error(`Expected REJECTED, got ${rejected.status}`)
     proof.scenarios.clearRejection = {
       submission: rejected,
@@ -600,18 +700,15 @@ export async function main() {
       mutableRecord = reconciled.scenario
       action = reconciled.action
       if (shouldReplaceClosedScenario(action)) {
-        if (action.action === 'EXPIRE_AND_REPLACE') {
-        await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, { address, functionName: 'expire_bounty', args: [mutableRecord.bountyId] }, `expire ${mutableRecord.title}`)
-        }
         mutableRecord = replaceScenarioRecord({ ...mutableRecord, status: 'EXPIRED', replacementReason: action.reason }, new Date().toISOString())
+        checkpointScenarioRecord(mutableRecord)
       } else if (action.action !== 'REUSE') {
         throw new Error(`Stored mutable scenario cannot resume: ${action.reason}`)
       }
     }
-    if (mutableRecord.bountyId === null) mutableRecord = await postScenario(mutableRecord)
-    if (mutableRecord.submissionId === null) mutableRecord = await submitScenario(mutableRecord, 'submit mutable evidence')
-    proof.scenarios.mutationScenario = mutableRecord
-    checkpoint()
+    mutableRecord = await postScenario(mutableRecord)
+    mutableRecord = await submitScenario(mutableRecord, 'submit mutable evidence')
+    checkpointScenarioRecord(mutableRecord)
     const mutationCheckpoint = proof.preflight?.mutationState
       ?? reconcileMutationState(proof.scenarios.mutationState, proof.preflight?.health?.mutableState ?? 'initial', process.env.LIVE_MUTABLE_EVIDENCE_URI)
     if (mutationCheckpoint.state !== MUTATION_STATES.CONFIRMED) {
@@ -627,7 +724,9 @@ export async function main() {
       proof.scenarios.mutationWebhook = { ...proof.scenarios.mutationState }
       checkpoint()
     }
-    const inconclusive = await evaluateAndRead(mutableRecord.submissionId, 'evaluate mutated evidence')
+    const mutationEvaluation = await evaluateScenario(mutableRecord, 'evaluate mutated evidence')
+    mutableRecord = mutationEvaluation.scenario
+    const inconclusive = mutationEvaluation.submission
     if (
       inconclusive.status !== 'INCONCLUSIVE'
       || !['DIGEST_MISMATCH', 'FETCH_FAILED'].includes(inconclusive.reason_code)
@@ -652,20 +751,18 @@ export async function main() {
       approvalRecord = reconciled.scenario
       action = reconciled.action
       if (shouldReplaceClosedScenario(action)) {
-        if (action.action === 'EXPIRE_AND_REPLACE') {
-        await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, { address, functionName: 'expire_bounty', args: [approvalRecord.bountyId] }, `expire ${approvalRecord.title}`)
-        }
         approvalRecord = replaceScenarioRecord({ ...approvalRecord, status: 'EXPIRED', replacementReason: action.reason }, new Date().toISOString())
+        checkpointScenarioRecord(approvalRecord)
       } else if (action.action === 'CANCEL_AND_REPLACE') {
-        await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, { address, functionName: 'cancel_bounty', args: [approvalRecord.bountyId] }, `cancel ${approvalRecord.title}`)
         approvalRecord = replaceScenarioRecord({ ...approvalRecord, status: 'CANCELLED', replacementReason: action.reason }, new Date().toISOString())
+        checkpointScenarioRecord(approvalRecord)
       } else if (action.action !== 'REUSE') {
         throw new Error(`Stored approval scenario cannot resume: ${action.reason}`)
       }
     }
-    if (approvalRecord.bountyId === null) approvalRecord = await postScenario(approvalRecord)
+    approvalRecord = await postScenario(approvalRecord)
     approvalRecord = await submitScenario(approvalRecord, 'submit clear approval evidence')
-    proof.scenarios.approvalScenario = approvalRecord
+    checkpointScenarioRecord(approvalRecord)
     const approveSubmission = approvalRecord.submissionId
     if (!proof.scenarios.approvalPayoutBaseline) {
       const balanceBefore = await creatorClient.getBalance({ address: creator.address })
@@ -676,7 +773,9 @@ export async function main() {
       }
       checkpoint()
     }
-    const approved = await evaluateAndRead(approveSubmission, 'evaluate clear approval')
+    const approvalEvaluation = await evaluateScenario(approvalRecord, 'evaluate clear approval')
+    approvalRecord = approvalEvaluation.scenario
+    const approved = approvalEvaluation.submission
     const balanceAfter = await creatorClient.getBalance({ address: creator.address })
     const balanceBefore = BigInt(proof.scenarios.approvalPayoutBaseline.balanceBefore)
     const balanceDelta = balanceAfter - balanceBefore

@@ -107,3 +107,14 @@ successful response. A Worker state of `mutated` without a matching checkpoint,
 or `initial` after `CONFIRMED`, fails closed. Expired scenarios are expired or
 cancelled where permitted and replaced with unique titles using four-hour
 submission and evaluation windows.
+
+Replacement scenarios are checkpointed before posting, after each submitted
+transaction hash, and immediately after recovering bounty/submission IDs.
+Restarts first recover the unique exact-title bounty, exact
+bounty/creator/evidence submission, and scenario-bound evaluation transaction;
+label-only recovery must resolve to exactly one usable transaction. Expiration
+or cancellation is also bound to the scenario's stored closure action and
+transaction, including in replacement history, so a restart cannot repeat an
+already-finalized closure. They do not submit a duplicate write. Deployment
+provenance preserves the commit and SHA-256 recorded by the deployment-time
+artifact, while runner commit and dirty state are recorded separately.

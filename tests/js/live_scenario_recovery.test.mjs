@@ -32,6 +32,21 @@ test('selects reuse, expiry replacement, and does not reuse expired title matche
   assert.equal(replaced.evaluationGraceSeconds, BRADBURY_SCENARIO_WINDOW_SECONDS)
 })
 
+test('preserves exact closure transaction in replacement history', () => {
+  const original = {
+    ...createScenarioRecord({ scenarioKey: 'mutation', baseTitle: 'Mutable', evidenceUri: uri, generatedAt: '2026-08-09T01:02:03Z' }),
+    bountyId: 1,
+    submissionId: 1,
+    status: 'EXPIRED',
+    closureAction: 'EXPIRE',
+    closureTransaction: '0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4',
+  }
+  const replaced = replaceScenarioRecord(original, '2026-08-09T02:00:00Z')
+  assert.equal(replaced.history[0].closureAction, 'EXPIRE')
+  assert.equal(replaced.history[0].closureTransaction, original.closureTransaction)
+  assert.equal(replaced.closureTransaction, null)
+})
+
 test('replaces a no-submission scenario after its submission deadline and rejects terminal reuse', () => {
   assert.equal(scenarioDeadlineAction({
     bounty: { status: 'OPEN', submission_deadline: 100, evaluation_deadline: 200 },

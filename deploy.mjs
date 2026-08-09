@@ -34,7 +34,7 @@ function normalizeReceiptField(receipt, nameFields, numberFields, mapping) {
   return ''
 }
 
-function summarizeReceipt(receipt) {
+export function summarizeReceipt(receipt) {
   return {
     statusName: normalizeReceiptField(
       receipt,
@@ -55,6 +55,14 @@ function summarizeReceipt(receipt) {
       executionResultNumberToName,
     ),
   }
+}
+
+export function successfulDeploymentSummary(summary) {
+  const agreed = summary.resultName === TransactionResult.AGREE
+    || summary.resultName === TransactionResult.MAJORITY_AGREE
+  return summary.statusName === TransactionStatus.FINALIZED
+    && agreed
+    && summary.executionResultName === ExecutionResult.FINISHED_WITH_RETURN
 }
 
 export function guardedDeploymentAccount(privateKey, createAccountImpl = createAccount) {
@@ -119,11 +127,7 @@ export async function main({
   const summary = summarizeReceipt(receipt)
   console.log('Receipt classification:', JSON.stringify(summary))
 
-  if (
-    summary.statusName !== TransactionStatus.FINALIZED
-    || summary.resultName !== TransactionResult.MAJORITY_AGREE
-    || summary.executionResultName !== ExecutionResult.FINISHED_WITH_RETURN
-  ) {
+  if (!successfulDeploymentSummary(summary)) {
     throw new Error(
       `Deployment did not finalize successfully: status=${summary.statusName || 'UNKNOWN'}, consensus=${summary.resultName || 'UNKNOWN'}, execution=${summary.executionResultName || 'UNKNOWN'}.`,
     )

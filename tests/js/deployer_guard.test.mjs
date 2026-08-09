@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { guardedDeploymentAccount, main as deployMain } from '../../deploy.mjs'
+import {
+  guardedDeploymentAccount,
+  main as deployMain,
+  successfulDeploymentSummary,
+} from '../../deploy.mjs'
 import {
   assertSafeDeployerAccount,
   COMPROMISED_DEPLOYER_ADDRESSES,
@@ -17,6 +21,13 @@ test('both compromised deployers are rejected before deployment or signing activ
     }, /compromised account/)
     assert.equal(signingCalls, 0)
   }
+})
+
+test('deployment finality accepts Bradbury AGREE and SDK MAJORITY_AGREE', () => {
+  const base = { statusName: 'FINALIZED', executionResultName: 'FINISHED_WITH_RETURN' }
+  assert.equal(successfulDeploymentSummary({ ...base, resultName: 'AGREE' }), true)
+  assert.equal(successfulDeploymentSummary({ ...base, resultName: 'MAJORITY_AGREE' }), true)
+  assert.equal(successfulDeploymentSummary({ ...base, resultName: 'DISAGREE' }), false)
 })
 
 test('deploy.mjs rejects both compromised accounts before client creation or deployContract', async () => {

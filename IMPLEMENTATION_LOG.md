@@ -1652,9 +1652,12 @@ Additional offline review fixes completed before any new signed live action:
   `PENDING/CONFIRMED + mutated` reconciliation and fails closed for the other
   three state combinations.
 - Proof provenance now separates deployed source commit/SHA-256 from runner
-  commit and runner dirty state. The deployed source commit is the full
-  `f29acfcf7eacace94eaa1f4601abf832f60e6898` commit; the runner provenance is
-  captured at artifact creation/resume.
+  commit and runner dirty state. Follow-up review established that the
+  deployment-time proof artifact recorded source commit
+  `c5c64c1ef007fa9b06d96aaa9255fe7322e6d356`; recovery preserves that exact
+  recorded attribution and the authoritative source SHA-256 rather than
+  substituting a later commit. Runner provenance is captured independently at
+  artifact creation/resume.
 - README, frontend README, and live-proof documentation now identify
   `AUDIT_REPORT.md` as an archival audit of historical commit `a09fe6a`; the
   audit file itself remains unchanged.
@@ -1689,3 +1692,36 @@ js-yaml .github/workflows/ci.yml
 git diff --check; git diff --quiet -- AUDIT_REPORT.md
 => PASS.
 ```
+
+### 2026-08-09 — crash-boundary scenario recovery milestone (pending commit)
+
+The runner now checkpoints replacement scenarios before every operation and
+requires exact transaction provenance at every recovery boundary. A stored
+bounty ID must have its exact post transaction; a stored submission ID must
+have its exact submission transaction; and an evaluation can resume only from
+`scenario.evaluationTransaction`. Label-only recovery is accepted only when
+exactly one usable transaction matches, otherwise the run fails closed.
+Closure state is now scenario-bound (`closureAction` plus
+`closureTransaction`), preserving the already-finalized mutable expiration in
+the scenario history and preventing a duplicate expiration or action mismatch.
+Deployment receipt classification treats both `AGREE` and
+`MAJORITY_AGREE` as successful consensus when status is `FINALIZED` and
+execution is `FINISHED_WITH_RETURN`.
+
+Focused additions passed:
+
+```text
+node --test tests/js/live_scenario_executor.test.mjs tests/js/live_scenario_recovery.test.mjs tests/js/deployer_guard.test.mjs tests/js/live_provenance.test.mjs
+=> PASS; 4 test files, 0 failures.
+node --check scripts/live-scenario-executor.mjs tests/integration/live_consensus.mjs deploy.mjs
+=> PASS.
+git diff --check
+=> PASS.
+```
+
+The complete offline suite for this milestone also passed: semantic check,
+29 Direct Mode tests, evidence (3), network (4 files), lifecycle (9 files),
+hosting (1), frontend (67), typecheck, production build, bundle verification,
+dependency audits (0 vulnerabilities in root and frontend), CI YAML parsing,
+and secret-safe mode-600 checks for `.env` and `frontend/.env`. No signed
+transaction or mutation webhook call occurred during this offline milestone.
