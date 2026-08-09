@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 const PRIVATE_KEY_PATTERN = /0x[0-9a-fA-F]{64}/g
@@ -61,6 +61,14 @@ export function createProofArtifact(output, initialProof) {
   updateProofCompletion(proof)
   checkpointProof(output, proof)
   return proof
+}
+
+export function loadProofArtifact(output) {
+  try {
+    return JSON.parse(readFileSync(resolve(output), 'utf8'))
+  } catch {
+    return null
+  }
 }
 
 export function recordProofFailure(output, proof, error) {

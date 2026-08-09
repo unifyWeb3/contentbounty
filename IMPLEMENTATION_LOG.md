@@ -1396,3 +1396,114 @@ npm run test:live
   can be resumed or a new authoritative run is required.
 - No persistent proof, finalized payout delta, frontend contract configuration,
   frontend deployment, commit, or push was completed in this attempt.
+
+## 2026-08-09 — finalized Bradbury deployment recovery and proof resume
+
+### Findings and security clarification
+
+- The exposed key was not committed to the repository, `.env`, proof artifact,
+  or implementation log. It was accidentally emitted in a protected tool-session
+  diagnostic while deriving a public wallet address from the ignored `.env`.
+  Anyone with access to that session transcript could potentially have seen it,
+  so it was correctly treated as compromised. The replaced key now derives to
+  `0x381b78F0C90a29cE2acDB718a9A4E1387004D3c7`; creator remains
+  `0x7fD87C28F4345ee8A4124511e16084464ca2E123`. Private-key values and the
+  mutation token are not recorded.
+- `.env` remains mode 600 and Git-ignored. All shell loads used `set -a; source
+  .env; set +a` without tracing or value output.
+
+### Recovery implementation
+
+- Added explicit `LIVE_EXISTING_CONTRACT_ADDRESS` and
+  `LIVE_EXISTING_DEPLOYMENT_TRANSACTION` recovery inputs. They must be supplied
+  together; recovery never invokes `deployContract`.
+- Recovery reads the official Bradbury consensus-data lifecycle through
+  genlayer-js, requiring `FINALIZED`, `AGREE`, and `FINISHED_WITH_RETURN`.
+  It decodes deployment calldata, verifies the recovered contract address, and
+  compares the exact source SHA-256. Existing proof artifacts are identity
+  checked and atomically resumed rather than overwritten.
+- Bradbury's official result name is currently `AGREE` (SDK/local variants may
+  expose `MAJORITY_AGREE`); lifecycle classification now accepts both while
+  retaining disagreement/no-majority/execution-failure rejection.
+- Recovery, lifecycle, and preflight reads have bounded transient-RPC retries.
+  Preflight performs balances and HTTPS GET/health checks only; the mutation
+  webhook is never called during preflight. Failed terminal transactions are
+  ignored for retry selection only after read-only contract state proves no
+  submission was created.
+
+### Authoritative recovered deployment
+
+- Deployment transaction:
+  `0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93`
+- Contract:
+  `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`
+- Explorer links:
+  https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93
+  and
+  https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04
+- Lifecycle: `FINALIZED`; consensus `AGREE`; execution
+  `FINISHED_WITH_RETURN`.
+- Current source SHA-256:
+  `d19d74e60d5c869688690c2742bb4cd3875daafabb45ca0bfc994fbefd786ed7`.
+- The recovered contract was read-only verified unused before scenarios.
+
+### Submitted proof transactions and current state
+
+- Clear-rejection bounty post finalized:
+  `0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d`.
+- Rejection evidence submission finalized:
+  `0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4`.
+- Clear-rejection evaluation finalized:
+  `0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33`.
+- The rejection evaluation is `REJECTED`; the committed adversarial hash was
+  verified on-chain as
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537` with
+  1,092 normalized characters.
+- First mutable-bounty post finalized:
+  `0xe66cbe68a7f0c99ca6dbfdeabfe3bd5864abed77faf23562dbfe38b519181677`.
+- First mutable submission `0xf69aa7aac4bdf2c65ddc7837c2754cc4bff2224d01c38abd7e66e4dca68d228d`
+  reached terminal `LEADER_TIMEOUT` and was not retried until read-only state
+  proved bounty 1 remained OPEN with zero submissions. Replacement mutable
+  submission:
+  `0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be`.
+- The replacement mutable submission is currently observed as
+  `ACCEPTED/AGREE/FINISHED_WITH_RETURN` on direct Bradbury reads. It has not yet
+  finalized. The mutation webhook has not been called; Worker `mutableState`
+  remains `initial`.
+- Proof artifact: `/tmp/contentbounty-live-consensus-proof.json`, mode 600,
+  `proofComplete=false`. It is incrementally checkpointed and contains all
+  lifecycle observations and transient RPC errors.
+
+### Exact commands and results
+
+```text
+node --test tests/js/live_deployment_recovery.test.mjs tests/js/live_run_preflight.test.mjs
+=> PASS; 2 files, 9 subtests, 0 failed
+
+npm run test:lifecycle
+=> PASS; 5 files, 0 failed (including lifecycle AGREE handling, recovery,
+   proof-store persistence, adversarial fixture, and preflight retries)
+
+node --check tests/integration/live_consensus.mjs
+node --check scripts/live-deployment-recovery.mjs
+node --check scripts/live-run-preflight.mjs
+git diff --check
+=> PASS
+
+npm run test:live (authorized recovery attempts)
+=> No deployment branch executed. Deployment/rejection checks finalized;
+   current run stopped at replacement mutable submission accepted while Bradbury
+   consensus-data reads intermittently failed. No mutation or payout proof yet.
+```
+
+### Remaining live blockers
+
+- Stable Bradbury consensus-data reads must observe replacement submission
+  `0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be`
+  as `FINALIZED/AGREE/FINISHED_WITH_RETURN`.
+- Only then may the configured mutation webhook be called, followed by
+  `INCONCLUSIVE` (`DIGEST_MISMATCH` or `FETCH_FAILED`), clear approval finality,
+  and exact creator payout delta.
+- `proofComplete` remains false. No frontend contract configuration or frontend
+  hosting update has been made because the persistent payout-proof gate is not
+  complete.

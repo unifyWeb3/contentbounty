@@ -228,7 +228,10 @@ commitment to the committed adversarial rejection fixture, clear rejection,
 mutation inconclusive behavior, clear approval finality, and an exact
 persistent recipient balance delta. The fixture manifest records SHA-256
 `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`.
-No deployment or live proof exists yet.
+The Bradbury deployment transaction is recoverable at
+`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93` with
+contract `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`; the live proof scenarios
+remain incomplete until the authorized recovery runner finishes.
 It is never run by CI and requires explicit authorization plus funded keys and
 external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
 

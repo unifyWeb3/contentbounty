@@ -8,11 +8,17 @@ import {
   classifyOnChainAdversarialCommitment,
   loadCommittedLiveAdversarialFixture,
 } from '../../scripts/live-adversarial-fixture.mjs'
+import {
+  recoverFinalizedDeployment,
+  validateRecoveryProofArtifact,
+} from '../../scripts/live-deployment-recovery.mjs'
 import { waitForLiveLifecycle } from '../../scripts/live-lifecycle.mjs'
 import { selectLiveProofMode } from '../../scripts/live-proof-mode.mjs'
+import { preflightLiveRun } from '../../scripts/live-run-preflight.mjs'
 import {
   checkpointProof,
   createProofArtifact,
+  loadProofArtifact,
   proofJson,
   recordProofFailure,
   updateProofCompletion,
@@ -29,6 +35,9 @@ const requiredNames = [
   'LIVE_MUTATION_WEBHOOK_URL',
 ]
 
+const RECOVERY_ADDRESS = 'LIVE_EXISTING_CONTRACT_ADDRESS'
+const RECOVERY_TRANSACTION = 'LIVE_EXISTING_DEPLOYMENT_TRANSACTION'
+
 function requiredEnvironment() {
   const missing = requiredNames.filter((name) => !process.env[name]?.trim())
   if (missing.length) {
@@ -44,12 +53,29 @@ function requiredEnvironment() {
   }
 }
 
+function configuredRecovery() {
+  const address = process.env[RECOVERY_ADDRESS]?.trim() || ''
+  const transaction = process.env[RECOVERY_TRANSACTION]?.trim() || ''
+  if (Boolean(address) !== Boolean(transaction)) {
+    throw new Error(`${RECOVERY_ADDRESS} and ${RECOVERY_TRANSACTION} must be supplied together for recovery`)
+  }
+  return address && transaction ? { address, transaction } : null
+}
+
 function explorerBase(chain) {
   return chain.blockExplorers.default.url.replace(/\/$/, '')
 }
 
-async function waitLifecycle(client, hash, label, chain, proof, checkpoint) {
-  const transactionProof = {
+function latestUsableTransaction(proof, label) {
+  return [...proof.transactions].reverse().find((item) =>
+    item.label === label
+    && typeof item.hash === 'string'
+    && item.status !== 'EVM_REVERTED_OR_NOT_PROCESSED'
+    && item.observations?.at(-1)?.phase !== 'FAILED')
+}
+
+async function waitLifecycle(client, hash, label, chain, proof, checkpoint, existing = null) {
+  const transactionProof = existing ?? {
     label,
     hash,
     explorer: `${explorerBase(chain)}/tx/${hash}`,
@@ -58,7 +84,7 @@ async function waitLifecycle(client, hash, label, chain, proof, checkpoint) {
     successfulFinalizationObserved: false,
     separateAcceptedAndFinalizedObservations: false,
   }
-  proof.transactions.push(transactionProof)
+  if (!existing) proof.transactions.push(transactionProof)
   checkpoint()
   const lifecycle = await waitForLiveLifecycle({
     client,
@@ -69,12 +95,23 @@ async function waitLifecycle(client, hash, label, chain, proof, checkpoint) {
       transactionProof.observations.push(observation)
       checkpoint()
     },
+    onTransientError: ({ attempt, retries, message }) => {
+      transactionProof.observationErrors ??= []
+      transactionProof.observationErrors.push({
+        observedAt: new Date().toISOString(),
+        attempt,
+        retries,
+        message,
+      })
+      checkpoint()
+    },
   })
-  transactionProof.acceptedPhaseObserved = lifecycle.acceptedPhaseObserved
   transactionProof.successfulFinalizationObserved = lifecycle.successfulFinalizationObserved
-  transactionProof.separateAcceptedAndFinalizedObservations = lifecycle.separateAcceptedAndFinalizedObservations
-  transactionProof.accepted = lifecycle.observations.find((item) => item.phase === 'ACCEPTED') ?? null
-  transactionProof.finalized = lifecycle.observations.find((item) => item.phase === 'FINALIZED') ?? null
+  transactionProof.acceptedPhaseObserved = transactionProof.observations.some((item) => item.phase === 'ACCEPTED')
+  transactionProof.separateAcceptedAndFinalizedObservations = transactionProof.acceptedPhaseObserved
+    && transactionProof.observations.some((item) => item.phase === 'FINALIZED')
+  transactionProof.accepted = transactionProof.observations.find((item) => item.phase === 'ACCEPTED') ?? null
+  transactionProof.finalized = transactionProof.observations.find((item) => item.phase === 'FINALIZED') ?? null
   checkpoint()
   return lifecycle.finalizedReceipt
 }
@@ -93,9 +130,28 @@ async function readAll(client, address, functionName, leadingArgs = []) {
 }
 
 async function writeAndFinalize(client, account, chain, proof, checkpoint, request, label) {
-  const hash = await client.writeContract({ account, ...request })
-  await waitLifecycle(client, hash, label, chain, proof, checkpoint)
-  return hash
+  try {
+    const hash = await client.writeContract({ account, ...request })
+    await waitLifecycle(client, hash, label, chain, proof, checkpoint)
+    return hash
+  } catch (error) {
+    const message = error?.message ?? String(error)
+    const evmHash = message.match(/EVM tx (0x[0-9a-fA-F]{64})/i)?.[1]
+    if (evmHash && !proof.transactions.some((item) => item.hash?.toLowerCase() === evmHash.toLowerCase())) {
+      proof.transactions.push({
+        label,
+        hash: evmHash,
+        explorer: `${explorerBase(chain)}/tx/${evmHash}`,
+        observations: [],
+        acceptedPhaseObserved: false,
+        successfulFinalizationObserved: false,
+        separateAcceptedAndFinalizedObservations: false,
+        status: 'EVM_REVERTED_OR_NOT_PROCESSED',
+      })
+      checkpoint()
+    }
+    throw error
+  }
 }
 
 export async function main() {
@@ -115,7 +171,8 @@ export async function main() {
   const adversarialFixture = loadCommittedLiveAdversarialFixture()
   const reward = BigInt(process.env.LIVE_REWARD_WEI || '1000000000000000')
   const output = process.env.LIVE_PROOF_OUTPUT || '/tmp/contentbounty-live-consensus-proof.json'
-  const proof = createProofArtifact(output, {
+  const recovery = configuredRecovery()
+  const initialProof = {
     generatedAt: new Date().toISOString(),
     network,
     proofMode: proofMode.mode,
@@ -149,24 +206,95 @@ export async function main() {
     unsupported: {
       fabricatedLeaderDisagreement: 'The public SDK/testnets expose no leader-result fabrication hook; use an authorized validator harness when GenLayer provides one.',
     },
-  })
+  }
+  const storedProof = recovery ? validateRecoveryProofArtifact(loadProofArtifact(output), {
+    network,
+    deploymentTransaction: recovery.transaction,
+    contractAddress: recovery.address,
+    sourceSha256: initialProof.sourceSha256,
+    deployer: deployer.address,
+    creator: creator.address,
+  }) : null
+  const proof = createProofArtifact(output, storedProof ? {
+    ...initialProof,
+    ...storedProof,
+    status: 'RUNNING',
+    failure: null,
+    proofComplete: false,
+    resumedAt: new Date().toISOString(),
+  } : initialProof)
   const checkpoint = () => checkpointProof(output, proof)
 
   try {
-    const deploymentHash = await deployerClient.deployContract({ account: deployer, code, args: [] })
-    const deploymentReceipt = await waitLifecycle(
+    if (proofMode.persistent) proof.preflight = await preflightLiveRun({
+      network,
+      proofMode: proofMode.mode,
+      deployer,
+      creator,
       deployerClient,
-      deploymentHash,
-      'deploy v2.1.1',
-      chain,
-      proof,
-      checkpoint,
-    )
-    const address = deploymentReceipt?.data?.contract_address
-      ?? deploymentReceipt?.contractAddress
-      ?? deploymentReceipt?.result?.contract_address
-    if (typeof address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
-      throw new Error('Finalized deployment receipt did not contain a contract address')
+      creatorClient,
+      reward,
+      approvalUri: process.env.LIVE_APPROVE_EVIDENCE_URI,
+      rejectionUri: process.env.LIVE_REJECT_EVIDENCE_URI,
+      mutableUri: process.env.LIVE_MUTABLE_EVIDENCE_URI,
+      mutationWebhookUrl: process.env.LIVE_MUTATION_WEBHOOK_URL,
+      adversarialFixture,
+    })
+    checkpoint()
+
+    let address
+    let deploymentHash
+    if (recovery) {
+      const recovered = await recoverFinalizedDeployment({
+        client: deployerClient,
+        deploymentTransaction: recovery.transaction,
+        contractAddress: recovery.address,
+        expectedSourceSha256: proof.sourceSha256,
+      })
+      address = recovered.contractAddress
+      deploymentHash = recovered.transactionId
+      const recoveredTransactionProof = proof.transactions.find((item) =>
+        item.recovered && item.hash?.toLowerCase() === deploymentHash.toLowerCase())
+      if (!recoveredTransactionProof) proof.transactions.push({
+        label: 'recover v2.1.1 deployment',
+        hash: deploymentHash,
+        explorer: `${explorerBase(chain)}/tx/${deploymentHash}`,
+        recovered: true,
+        observations: [{
+          observedAt: new Date().toISOString(),
+          requestedStatus: 'RECOVERY_LOOKUP',
+          phase: 'FINALIZED',
+          terminal: true,
+          statusName: recovered.lifecycle.statusName,
+          resultName: recovered.lifecycle.resultName,
+          executionResultName: recovered.lifecycle.executionResultName,
+        }],
+        acceptedPhaseObserved: false,
+        successfulFinalizationObserved: true,
+        separateAcceptedAndFinalizedObservations: false,
+      })
+      proof.recoveredDeployment = {
+        transaction: deploymentHash,
+        contractAddress: address,
+        sourceSha256: recovered.sourceSha256,
+        lifecycle: recovered.lifecycle,
+      }
+    } else {
+      deploymentHash = await deployerClient.deployContract({ account: deployer, code, args: [] })
+      const deploymentReceipt = await waitLifecycle(
+        deployerClient,
+        deploymentHash,
+        'deploy v2.1.1',
+        chain,
+        proof,
+        checkpoint,
+      )
+      address = deploymentReceipt?.data?.contract_address
+        ?? deploymentReceipt?.contractAddress
+        ?? deploymentReceipt?.result?.contract_address
+      if (typeof address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        throw new Error('Finalized deployment receipt did not contain a contract address')
+      }
     }
     proof.contractAddress = address
     proof.contractExplorer = `${explorerBase(chain)}/address/${address}`
@@ -175,6 +303,8 @@ export async function main() {
       explorer: `${explorerBase(chain)}/tx/${deploymentHash}`,
       address,
       finalized: true,
+      recovered: Boolean(recovery),
+      sourceSha256: proof.sourceSha256,
     }
     proof.completionChecks.deploymentFinalized = true
     updateProofCompletion(proof)
@@ -186,6 +316,25 @@ export async function main() {
     ])
 
     async function postAndFind(title) {
+      const existingBounties = await readAll(deployerClient, address, 'get_bounties_page')
+      const existing = existingBounties.find((item) =>
+        item.title === title && item.poster?.toLowerCase() === deployer.address.toLowerCase())
+      if (existing) {
+        const transactionProof = latestUsableTransaction(proof, `post ${title}`)
+        if (!transactionProof) {
+          throw new Error(`Bounty ${title} already exists but its post transaction is absent from the proof artifact`)
+        }
+        await waitLifecycle(
+          deployerClient,
+          transactionProof.hash,
+          transactionProof.label,
+          chain,
+          proof,
+          checkpoint,
+          transactionProof,
+        )
+        return Number(existing.id)
+      }
       await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, {
         address,
         functionName: 'post_bounty',
@@ -197,6 +346,32 @@ export async function main() {
     }
 
     async function submitAndFind(bountyId, uri, label) {
+      const existingActivity = await readAll(
+        creatorClient,
+        address,
+        'get_creator_submissions_page',
+        [creator.address],
+      )
+      const existing = existingActivity.find((item) => Number(item.bounty_id) === Number(bountyId))
+      if (existing) {
+        const transactionProof = latestUsableTransaction(proof, label)
+        if (!transactionProof) {
+          throw new Error(`Submission for bounty ${bountyId} exists but its transaction is absent from the proof artifact`)
+        }
+        await waitLifecycle(
+          creatorClient,
+          transactionProof.hash,
+          transactionProof.label,
+          chain,
+          proof,
+          checkpoint,
+          transactionProof,
+        )
+        if (existing.evidence_uri !== uri) {
+          throw new Error(`Existing submission evidence URI mismatch for bounty ${bountyId}`)
+        }
+        return Number(existing.id)
+      }
       await writeAndFinalize(creatorClient, creator, chain, proof, checkpoint, {
         address,
         functionName: 'submit_content',
@@ -212,6 +387,23 @@ export async function main() {
     }
 
     async function evaluateAndRead(submissionId, label) {
+      const existingTransaction = latestUsableTransaction(proof, label)
+      if (existingTransaction) {
+        await waitLifecycle(
+          deployerClient,
+          existingTransaction.hash,
+          existingTransaction.label,
+          chain,
+          proof,
+          checkpoint,
+          existingTransaction,
+        )
+        return deployerClient.readContract({
+          address,
+          functionName: 'get_submission',
+          args: [submissionId],
+        })
+      }
       await writeAndFinalize(deployerClient, deployer, chain, proof, checkpoint, {
         address,
         functionName: 'evaluate_submission',
@@ -265,12 +457,19 @@ export async function main() {
       process.env.LIVE_MUTABLE_EVIDENCE_URI,
       'submit mutable evidence',
     )
-    const mutationResponse = await fetch(process.env.LIVE_MUTATION_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ uri: process.env.LIVE_MUTABLE_EVIDENCE_URI }),
-    })
-    if (!mutationResponse.ok) throw new Error(`Mutation webhook failed with ${mutationResponse.status}`)
+    if (!proof.scenarios.mutationWebhook) {
+      const mutationResponse = await fetch(process.env.LIVE_MUTATION_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ uri: process.env.LIVE_MUTABLE_EVIDENCE_URI }),
+      })
+      if (!mutationResponse.ok) throw new Error(`Mutation webhook failed with ${mutationResponse.status}`)
+      proof.scenarios.mutationWebhook = {
+        completedAt: new Date().toISOString(),
+        mutableEvidenceUri: process.env.LIVE_MUTABLE_EVIDENCE_URI,
+      }
+      checkpoint()
+    }
     const inconclusive = await evaluateAndRead(mutableSubmission, 'evaluate mutated evidence')
     if (
       inconclusive.status !== 'INCONCLUSIVE'
@@ -289,9 +488,18 @@ export async function main() {
       process.env.LIVE_APPROVE_EVIDENCE_URI,
       'submit clear approval evidence',
     )
-    const balanceBefore = await creatorClient.getBalance({ address: creator.address })
+    if (!proof.scenarios.approvalPayoutBaseline) {
+      const balanceBefore = await creatorClient.getBalance({ address: creator.address })
+      proof.scenarios.approvalPayoutBaseline = {
+        recipient: creator.address,
+        balanceBefore: balanceBefore.toString(),
+        recordedAt: new Date().toISOString(),
+      }
+      checkpoint()
+    }
     const approved = await evaluateAndRead(approveSubmission, 'evaluate clear approval')
     const balanceAfter = await creatorClient.getBalance({ address: creator.address })
+    const balanceBefore = BigInt(proof.scenarios.approvalPayoutBaseline.balanceBefore)
     const balanceDelta = balanceAfter - balanceBefore
     if (approved.status !== 'APPROVED') throw new Error(`Expected APPROVED, got ${approved.status}`)
     const deltaMatchesReward = balanceDelta === reward

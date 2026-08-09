@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   checkpointProof,
   createProofArtifact,
+  loadProofArtifact,
   recordProofFailure,
   updateProofCompletion,
 } from '../../scripts/live-proof-store.mjs'
@@ -54,6 +55,14 @@ test('tightens permissions when replacing an existing broad-mode artifact', () =
   })
   checkpointProof(output, proof)
   assert.equal(statSync(output).mode & 0o777, 0o600)
+})
+
+test('loads an existing proof artifact for recovery without changing it', () => {
+  const output = temporaryOutput()
+  const proof = createProofArtifact(output, { persistent: true, transactions: [{ hash: '0xabc' }] })
+  const loaded = loadProofArtifact(output)
+  assert.equal(loaded.status, 'RUNNING')
+  assert.equal(loaded.transactions[0].hash, '0xabc')
 })
 
 test('proofComplete requires every persistent settlement check', () => {

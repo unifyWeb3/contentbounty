@@ -50,6 +50,36 @@ function normalizeNumber(value, mapping) {
   return /^\d+$/.test(key) ? (mapping[key] || '') : ''
 }
 
+function transientObservationError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return /fetch failed|unknown rpc error|http request failed|eai_again|enotfound|econnreset|etimedout|socket|network/i.test(message)
+}
+
+async function waitWithTransientRetries({
+  client,
+  request,
+  retries,
+  interval,
+  sleep,
+  onTransientError,
+}) {
+  let attempt = 0
+  for (;;) {
+    try {
+      return await client.waitForTransactionReceipt(request)
+    } catch (error) {
+      if (!transientObservationError(error) || attempt >= retries) throw error
+      attempt += 1
+      onTransientError({
+        attempt,
+        retries,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      await sleep(interval)
+    }
+  }
+}
+
 function receiptField(receipt, nameFields, numberFields, mapping) {
   for (const field of nameFields) {
     const name = normalizeName(receipt?.[field])
@@ -84,7 +114,10 @@ export function classifyLiveReceipt(receipt) {
     return { ...names, phase: 'FAILED', terminal: true, failureReason: consensusFailureReasons[resultName] }
   }
 
+  // Bradbury consensus-data currently exposes the successful result as AGREE;
+  // SDK/local variants may expose the equivalent MAJORITY_AGREE name.
   const majority = resultName === TransactionResult.MAJORITY_AGREE
+    || resultName === TransactionResult.AGREE
   const executionReturned = executionResultName === ExecutionResult.FINISHED_WITH_RETURN
   if (statusName === TransactionStatus.FINALIZED) {
     if (!majority) {
@@ -133,6 +166,10 @@ export async function waitForLiveLifecycle({
   finalizedOptions = {},
   now = () => new Date().toISOString(),
   onObservation = () => {},
+  transientRetries = 12,
+  transientRetryInterval = 5000,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  onTransientError = () => {},
 }) {
   const observations = []
   const observe = (receipt, requestedStatus) => {
@@ -142,10 +179,17 @@ export async function waitForLiveLifecycle({
     return observation
   }
 
-  const firstReceipt = await client.waitForTransactionReceipt({
-    hash,
-    status: requestedAcceptedStatus,
-    ...acceptedOptions,
+  const firstReceipt = await waitWithTransientRetries({
+    client,
+    request: {
+      hash,
+      status: requestedAcceptedStatus,
+      ...acceptedOptions,
+    },
+    retries: transientRetries,
+    interval: transientRetryInterval,
+    sleep,
+    onTransientError,
   })
   const first = observe(firstReceipt, requestedAcceptedStatus)
   if (first.phase === 'FAILED') {
@@ -155,10 +199,17 @@ export async function waitForLiveLifecycle({
   let finalizedReceipt = firstReceipt
   let finalized = first
   if (first.phase !== 'FINALIZED') {
-    finalizedReceipt = await client.waitForTransactionReceipt({
-      hash,
-      status: requestedFinalizedStatus,
-      ...finalizedOptions,
+    finalizedReceipt = await waitWithTransientRetries({
+      client,
+      request: {
+        hash,
+        status: requestedFinalizedStatus,
+        ...finalizedOptions,
+      },
+      retries: transientRetries,
+      interval: transientRetryInterval,
+      sleep,
+      onTransientError,
     })
     finalized = observe(finalizedReceipt, requestedFinalizedStatus)
     if (finalized.phase === 'FAILED') {

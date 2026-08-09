@@ -41,6 +41,26 @@ export LIVE_REWARD_WEI=1000000000000000
 npm run test:live
 ```
 
+### Resuming a finalized deployment
+
+If deployment has already finalized, supply both recovery values to bypass
+deployment submission and resume at the clear-rejection scenario:
+
+```bash
+export LIVE_EXISTING_CONTRACT_ADDRESS=0x...
+export LIVE_EXISTING_DEPLOYMENT_TRANSACTION=0x...
+npm run test:live
+```
+
+The runner reads the official Bradbury consensus-data contract through
+genlayer-js, and fails closed unless the recovered transaction is `FINALIZED`,
+has consensus result `AGREE`, and has execution result `FINISHED_WITH_RETURN`.
+It decodes the deployment calldata and requires both the supplied contract
+address and the SHA-256 of the current `contracts/content_bounty.py` to match.
+The recovered deployment metadata and lifecycle observation are atomically
+checkpointed into the proof artifact before any scenario transaction. Recovery
+values must be supplied together; a mismatch never triggers a new deployment.
+
 The script requires an explicit `LIVE_GENLAYER_NETWORK` and
 `LIVE_PROOF_MODE`. It safely classifies numeric/camelCase/snake_case receipts,
 records every observed lifecycle state with timestamps, and accepts a

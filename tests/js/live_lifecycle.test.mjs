@@ -15,6 +15,11 @@ const successful = {
   txExecutionResultName: ExecutionResult.FINISHED_WITH_RETURN,
 }
 
+test('accepts Bradbury AGREE as the successful decided consensus result', () => {
+  assert.equal(classifyLiveReceipt({ statusName: 'ACCEPTED', resultName: 'AGREE', txExecutionResultName: 'FINISHED_WITH_RETURN' }).phase, 'ACCEPTED')
+  assert.equal(classifyLiveReceipt({ statusName: 'FINALIZED', resultName: 'AGREE', txExecutionResultName: 'FINISHED_WITH_RETURN' }).phase, 'FINALIZED')
+})
+
 test('classifies numeric, camelCase, and snake_case receipt fields', () => {
   assert.equal(classifyLiveReceipt({ status: 5, result: 6, txExecutionResult: 1 }).phase, 'ACCEPTED')
   assert.equal(classifyLiveReceipt({ statusName: 'finalized', resultName: 'majority_agree', txExecutionResultName: 'finished_with_return' }).phase, 'FINALIZED')
@@ -102,4 +107,39 @@ test('does not treat an intermediate finalization observation as success', async
     }),
     /did not verify success/i,
   )
+})
+
+test('retries transient Bradbury lifecycle read failures without losing successful observations', async () => {
+  let calls = 0
+  const transientErrors = []
+  const result = await waitForLiveLifecycle({
+    client: {
+      waitForTransactionReceipt: async () => {
+        calls += 1
+        if (calls <= 2) throw new Error('An unknown RPC error occurred. Details: fetch failed')
+        return { statusName: 'FINALIZED', resultName: 'AGREE', txExecutionResultName: 'FINISHED_WITH_RETURN' }
+      },
+    },
+    hash: '0xtransient',
+    transientRetries: 2,
+    transientRetryInterval: 0,
+    sleep: async () => {},
+    onTransientError: (error) => transientErrors.push(error),
+  })
+  assert.equal(calls, 3)
+  assert.equal(transientErrors.length, 2)
+  assert.equal(result.successfulFinalizationObserved, true)
+  assert.equal(result.observations.length, 1)
+})
+
+test('fails closed after bounded transient lifecycle retries', async () => {
+  let calls = 0
+  await assert.rejects(waitForLiveLifecycle({
+    client: { waitForTransactionReceipt: async () => { calls += 1; throw new Error('fetch failed') } },
+    hash: '0xoutage',
+    transientRetries: 2,
+    transientRetryInterval: 0,
+    sleep: async () => {},
+  }), /fetch failed/)
+  assert.equal(calls, 3)
 })
