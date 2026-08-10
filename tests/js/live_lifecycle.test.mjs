@@ -7,6 +7,8 @@ import {
 } from 'genlayer-js/types'
 import {
   classifyLiveReceipt,
+  LIVE_TRANSIENT_RPC_RETRIES,
+  LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS,
   waitForLiveLifecycle,
 } from '../../scripts/live-lifecycle.mjs'
 
@@ -14,6 +16,12 @@ const successful = {
   resultName: TransactionResult.MAJORITY_AGREE,
   txExecutionResultName: ExecutionResult.FINISHED_WITH_RETURN,
 }
+
+test('default transient RPC budget spans a full Bradbury finality interval', () => {
+  assert.ok(
+    LIVE_TRANSIENT_RPC_RETRIES * LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS >= 30 * 60 * 1000,
+  )
+})
 
 test('accepts Bradbury AGREE as the successful decided consensus result', () => {
   assert.equal(classifyLiveReceipt({ statusName: 'ACCEPTED', resultName: 'AGREE', txExecutionResultName: 'FINISHED_WITH_RETURN' }).phase, 'ACCEPTED')

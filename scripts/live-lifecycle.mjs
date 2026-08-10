@@ -41,6 +41,9 @@ const executionFailureReasons = {
   NONDET_DISAGREE: 'Contract execution ended with nondeterministic disagreement.',
 }
 
+export const LIVE_TRANSIENT_RPC_RETRIES = 360
+export const LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS = 5000
+
 function normalizeName(value) {
   return typeof value === 'string' ? value.trim().toUpperCase() : ''
 }
@@ -162,8 +165,8 @@ export async function waitForLiveLifecycle({
   finalizedOptions = {},
   now = () => new Date().toISOString(),
   onObservation = () => {},
-  transientRetries = 12,
-  transientRetryInterval = 5000,
+  transientRetries = LIVE_TRANSIENT_RPC_RETRIES,
+  transientRetryInterval = LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   onTransientError = () => {},
 }) {

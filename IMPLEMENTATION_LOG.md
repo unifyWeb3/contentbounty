@@ -1884,3 +1884,34 @@ bounty IDs are durably recorded before network preflight. A contradictory stored
 submission ID fails closed. Recovery corrections survive subsequent scenario
 replacement history. Focused syntax and four-file recovery tests pass; the fix
 must be committed cleanly before another signed action.
+
+### 2026-08-10 — accepted transactions preserved across Bradbury finality outages
+
+The exact-submission fix was committed as
+`158c38b71a00b5ea8ddd8805bff2e2266811a68e`. On the next authorized resume,
+bounty `2` was freshly observed past its submission deadline but before its
+evaluation deadline. The runner submitted exactly one `cancel_bounty`
+transaction:
+
+`0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce`
+
+It was first checkpointed `ACCEPTED / AGREE / FINISHED_WITH_RETURN`; after the
+runner stopped on repeated consensus-data fetch failures, bounded read-only
+polling later verified it `FINALIZED / AGREE / FINISHED_WITH_RETURN` and bounty
+`2` as `CANCELLED`. The runner then recovered that exact closure without
+duplication and posted one unique replacement mutable bounty:
+
+`0xa00fdbdf715bbbe9f6ac434f509cb0363a8dd62bc14daed63b2121b48c784963`
+
+Title: `Live mutation inconclusive [20260810050816-3]`. The post reached
+`ACCEPTED / AGREE / FINISHED_WITH_RETURN`, but the runner again exhausted its
+12 transient consensus-data retries before the Bradbury finality interval
+completed. No mutable submission or webhook call occurred; mutation remains
+`NOT_STARTED` and the exact post hash is checkpointed with `bountyId=null`.
+
+The lifecycle helper now retains a bounded 30-minute transient-RPC error budget
+(360 retries at five seconds) aligned with the existing 30-minute finalized
+receipt wait. Terminal consensus/execution states still fail immediately. This
+prevents intermittent Bradbury read failures from prematurely ending an
+otherwise healthy accepted transaction while preserving a finite external
+blocker boundary.
