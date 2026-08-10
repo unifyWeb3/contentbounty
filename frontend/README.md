@@ -1,20 +1,95 @@
-# ContentBounty — frontend
+# ContentBounty v2 frontend
 
-Vue 3 + Vite + TypeScript single-page app for ContentBounty, talking to the
-GenLayer Intelligent Contract via `genlayer-js`.
+Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
+Contract.
 
-See the [root README](../README.md) for the full project overview, architecture,
-and the evaluation/consensus design.
+A Bradbury v2.1.1 deployment is finalized and proven at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but persistent live consensus
+proof is complete. The reproducible production input is tracked in
+`.env.production`; the raw resumable artifact is kept outside Git at
+`/tmp/contentbounty-live-consensus-proof.json` and the sanitized public copy is
+`docs/proofs/bradbury-persistent-proof-v1.json`.
+`AUDIT_REPORT.md` is an archival audit of the historical pre-v2 commit and its
+Studionet address; it is not an advertisement of the current frontend state.
 
-## Quick start
+## Safety model
+
+- Uses an injected external wallet only.
+- Never generates, imports, displays, or persists a private key.
+- Parses GEN amounts as exact 18-decimal integers.
+- Accepts only the evidence URI; submission consensus derives the canonical
+  GenLayer-rendered SHA-256 instead of trusting a browser-calculated digest.
+- Persists transaction identifiers and observed lifecycle states so evidence
+  survives reload.
+- Separates `SUBMITTED`, `ACCEPTED`, and `FINALIZED`; it does not treat an
+  accepted evaluation as a confirmed payout.
+- Requires `MAJORITY_AGREE` and `FINISHED_WITH_RETURN` before displaying an
+  accepted or successfully finalized transaction.
+- Before every write, verifies the injected provider's chain ID, selected
+  consensus contract code, and official consensus ABI probe. Bradbury also
+  compares wallet and official RPC block hashes at the latest height both
+  providers report, allowing at most 3 sampled head blocks of lag. Bradbury
+  bytecode and `VERSION()` output must match at that latest common block; a
+  block 2 confirmations behind is additionally checked for continuity.
+  Because the wallet RPC URL is unavailable, this
+  treats identical execution state as equivalent rather than claiming a
+  cryptographic RPC-identity proof.
+- Reads v2 bounties, bounty submissions, and wallet activity through bounded
+  paginated views; activity uses the contract's creator index rather than a
+  whole-market scan.
+
+## Run
 
 ```bash
 npm install
-cp .env.example .env      # sets VITE_CONTRACT_ADDRESS
-npm run dev               # http://localhost:5173
+cp .env.example .env
+npm run dev
 ```
 
-| Variable | Purpose |
-|---|---|
-| `VITE_CONTRACT_ADDRESS` | Deployed ContentBounty contract address (required) |
-| `VITE_ADMIN_ADDRESS` | Optional address that sees the read-only Admin dashboard |
+Production verification:
+
+```bash
+npm test
+VITE_GENLAYER_NETWORK=testnetBradbury \
+VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
+npm run build
+```
+
+Repository-level production verification additionally runs
+`npm run verify:frontend-bundle`, which fails if generated assets contain the
+historical v0.2 address. The Vite production configuration also rejects that
+address before bundling.
+
+## Environment
+
+| Variable | Required | Purpose |
+|---|---:|---|
+| `VITE_CONTRACT_ADDRESS` | yes | Finalized Bradbury ContentBounty v2.1.1 address |
+| `VITE_GENLAYER_NETWORK` | no | `testnetBradbury` (default) or explicit `studionet` smoke/demo |
+
+The selector chooses the complete official `genlayer-js` chain object,
+including its RPC, explorer, chain ID, and consensus contract configuration.
+Unsupported and differently-cased values fail the application build/startup.
+Bradbury shares chain ID `4221` with another network; wallet switching cannot
+select between them automatically. If the injected provider's latest-common block,
+consensus code, or ABI probe is unavailable or mismatched, every write is
+blocked and the UI instructs the user to change the wallet's chain-4221 RPC to
+Bradbury. The selected official RPC is used as the identity reference; if it
+is unreachable, the app fails closed rather than guessing.
+
+The historical v0.2 address is incompatible with this frontend. The finalized
+v2.1.1 Bradbury contract is configured in `.env.production` at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`; production mode fails closed if
+the address is missing or the network is not testnetBradbury.
+
+Prepare evidence as UTF-8 raw text with the repository helper before publishing
+it at a stable, preferably content-addressed HTTPS URI. The normalized text
+must contain 1–16,000 characters; empty/whitespace-only and 16,001-character
+submissions fail before a bounty is locked:
+
+```bash
+.venv/bin/python scripts/prepare_evidence.py \
+  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
+  --file evidence.txt \
+  --write-canonical canonical-evidence.txt
+```

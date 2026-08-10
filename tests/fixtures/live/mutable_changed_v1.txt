@@ -1,0 +1,4 @@
+ContentBounty live mutable fixture v1 — changed after webhook
+
+The hosted evidence changed after submission. This text intentionally does not
+match the committed submission digest.

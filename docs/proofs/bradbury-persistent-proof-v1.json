@@ -1,0 +1,1164 @@
+{
+  "schemaVersion": "contentbounty-bradbury-persistent-proof-v1",
+  "proofCapturedAt": "2026-08-10T13:00:31.144Z",
+  "status": "COMPLETE",
+  "proofComplete": true,
+  "persistentPayoutProofValid": true,
+  "completionChecks": {
+    "deploymentFinalized": true,
+    "clearRejection": true,
+    "adversarialRejectionVerified": true,
+    "mutationInconclusive": true,
+    "clearApprovalFinalized": true,
+    "persistentPayoutDelta": true
+  },
+  "network": {
+    "selector": "testnetBradbury",
+    "proofMode": "persistent",
+    "chainId": 4221,
+    "persistent": true,
+    "balancesSimulated": false,
+    "valueSemantics": "PERSISTENT_PUBLIC_TESTNET_VALUES",
+    "consensusContract": "0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D",
+    "explorer": "https://explorer-bradbury.genlayer.com"
+  },
+  "contract": {
+    "address": "0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04",
+    "explorer": "https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04"
+  },
+  "deployment": {
+    "transaction": "0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93",
+    "explorer": "https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93",
+    "lifecycle": {
+      "statusName": "FINALIZED",
+      "resultName": "AGREE",
+      "executionResultName": "FINISHED_WITH_RETURN"
+    }
+  },
+  "provenance": {
+    "deployedSource": {
+      "commit": "c5c64c1ef007fa9b06d96aaa9255fe7322e6d356",
+      "sha256": "d19d74e60d5c869688690c2742bb4cd3875daafabb45ca0bfc994fbefd786ed7"
+    },
+    "runner": {
+      "commit": "936864e822c754eaf2bf13432ef38e6a2a7c3d3c",
+      "dirty": false
+    }
+  },
+  "accounts": {
+    "deployer": "0x381b78F0C90a29cE2acDB718a9A4E1387004D3c7",
+    "creatorAndPayoutRecipient": "0x7fD87C28F4345ee8A4124511e16084464ca2E123"
+  },
+  "adversarialRejectionFixture": {
+    "fixtureVersion": "content-bounty-live-adversarial-rejection-v1",
+    "fixtureName": "adversarial_rejection_v1",
+    "expectedNormalizedSha256": "efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537",
+    "observedOnChainSha256": "efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537",
+    "characterCount": 1092,
+    "utf8ByteCount": 1092,
+    "verified": true,
+    "adversarialCases": [
+      "closing-tag injection",
+      "ignore-previous-instructions attack",
+      "fake JSON and output-format instructions",
+      "system, developer, and assistant role impersonation",
+      "injection propagated through an extracted-observation-shaped payload",
+      "malicious rubric override text"
+    ]
+  },
+  "scenarios": {
+    "clearRejection": {
+      "title": "Live clear rejection",
+      "bountyId": 0,
+      "submissionId": 0,
+      "evidenceUri": "https://contentbounty-live-evidence.contentbounty.workers.dev/reject.txt",
+      "transactions": {
+        "post": {
+          "hash": "0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d"
+        },
+        "submission": {
+          "hash": "0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4"
+        },
+        "evaluation": {
+          "hash": "0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33"
+        }
+      },
+      "result": {
+        "bountyId": 0,
+        "submissionId": 0,
+        "status": "REJECTED",
+        "decision": "REJECT",
+        "reasonCode": "CRITERIA_NOT_MET",
+        "criteriaBits": "00",
+        "scoreBucket": 0,
+        "evidenceSha256": "efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537",
+        "submittedAt": 1786246215,
+        "evaluatedAt": 1786248030,
+        "rubricVersion": "content-bounty-rubric-v2",
+        "evaluatorVersion": "content-bounty-evaluator-v2.1-json-envelope"
+      }
+    },
+    "mutationInconclusive": {
+      "title": "Live mutation inconclusive [20260810095031-4]",
+      "bountyId": 4,
+      "submissionId": 2,
+      "evidenceUri": "https://contentbounty-live-evidence.contentbounty.workers.dev/mutable.txt",
+      "submissionDeadline": 1786369839,
+      "evaluationDeadline": 1786384239,
+      "transactions": {
+        "post": {
+          "hash": "0xd1fdcf41b6df3d076c1d4bf83c0ef663dc123d8b7b7a2caac800884569225243",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0xd1fdcf41b6df3d076c1d4bf83c0ef663dc123d8b7b7a2caac800884569225243"
+        },
+        "submission": {
+          "hash": "0xfd320a47cd0cea98008ff91f14334d1d7242e1da13b1fe59a926b07a659ea842",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0xfd320a47cd0cea98008ff91f14334d1d7242e1da13b1fe59a926b07a659ea842"
+        },
+        "evaluation": {
+          "hash": "0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa"
+        }
+      },
+      "mutationCheckpoint": {
+        "state": "CONFIRMED",
+        "pendingAt": "2026-08-10T10:51:31.428Z",
+        "confirmedAt": "2026-08-10T10:51:32.690Z",
+        "webhookCalledExactlyOnceByRunner": true
+      },
+      "result": {
+        "bountyId": 4,
+        "submissionId": 2,
+        "status": "INCONCLUSIVE",
+        "decision": "INCONCLUSIVE",
+        "reasonCode": "DIGEST_MISMATCH",
+        "criteriaBits": "",
+        "scoreBucket": 0,
+        "evidenceSha256": "ad42bd1d50e4dbf4781f7ad752d4ea10a0842d8871b1a84669e055ba9645950f",
+        "submittedAt": 1786357266,
+        "evaluatedAt": 1786359096,
+        "rubricVersion": "content-bounty-rubric-v2",
+        "evaluatorVersion": "content-bounty-evaluator-v2.1-json-envelope"
+      },
+      "replacementHistory": [
+        {
+          "title": "Live mutation inconclusive",
+          "bountyId": 1,
+          "submissionId": 1,
+          "status": "EXPIRED",
+          "replacementReason": "EXPIRED",
+          "submissionDeadline": 1786253468,
+          "evaluationDeadline": 1786257068,
+          "transactions": {
+            "post": {
+              "hash": "0xe66cbe68a7f0c99ca6dbfdeabfe3bd5864abed77faf23562dbfe38b519181677",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xe66cbe68a7f0c99ca6dbfdeabfe3bd5864abed77faf23562dbfe38b519181677"
+            },
+            "submission": {
+              "hash": "0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be"
+            },
+            "closure": {
+              "hash": "0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4"
+            }
+          }
+        },
+        {
+          "title": "Live mutation inconclusive [20260809232050-2]",
+          "bountyId": 2,
+          "submissionId": null,
+          "status": "CANCELLED",
+          "replacementReason": "CANCELLED",
+          "submissionDeadline": 1786332053,
+          "evaluationDeadline": 1786346453,
+          "transactions": {
+            "post": {
+              "hash": "0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2"
+            },
+            "closure": {
+              "hash": "0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce"
+            }
+          }
+        },
+        {
+          "title": "Live mutation inconclusive [20260810050816-3]",
+          "bountyId": 3,
+          "submissionId": null,
+          "status": "CANCELLED",
+          "replacementReason": "CANCELLED",
+          "submissionDeadline": 1786352899,
+          "evaluationDeadline": 1786367299,
+          "transactions": {
+            "post": {
+              "hash": "0xa00fdbdf715bbbe9f6ac434f509cb0363a8dd62bc14daed63b2121b48c784963",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xa00fdbdf715bbbe9f6ac434f509cb0363a8dd62bc14daed63b2121b48c784963"
+            },
+            "closure": {
+              "hash": "0xda52eb56290cb6db9c1c796d75ba634c4f849357c3fecd83fa7fec9fa104d7d7",
+              "explorer": "https://explorer-bradbury.genlayer.com/tx/0xda52eb56290cb6db9c1c796d75ba634c4f849357c3fecd83fa7fec9fa104d7d7"
+            }
+          }
+        }
+      ]
+    },
+    "clearApprovalAndPayout": {
+      "title": "Live clear approval and payout [20260809025953-1]",
+      "bountyId": 5,
+      "submissionId": 3,
+      "evidenceUri": "https://contentbounty-live-evidence.contentbounty.workers.dev/approve.txt",
+      "submissionDeadline": 1786375372,
+      "evaluationDeadline": 1786389772,
+      "transactions": {
+        "post": {
+          "hash": "0xc3ed971df471998cb0bdb1de9414f6c2148d98b188174bdc07cb67acf6be9071",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0xc3ed971df471998cb0bdb1de9414f6c2148d98b188174bdc07cb67acf6be9071"
+        },
+        "submission": {
+          "hash": "0x13dfa13fbc51d842426999d030fc5608b4662565e60223cb0697f91aa4ebce5c",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0x13dfa13fbc51d842426999d030fc5608b4662565e60223cb0697f91aa4ebce5c"
+        },
+        "evaluation": {
+          "hash": "0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227",
+          "explorer": "https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227"
+        }
+      },
+      "result": {
+        "bountyId": 5,
+        "submissionId": 3,
+        "status": "APPROVED",
+        "decision": "APPROVE",
+        "reasonCode": "ALL_REQUIRED_CRITERIA_MET",
+        "criteriaBits": "11",
+        "scoreBucket": 4,
+        "evidenceSha256": "173b3e7202467ec0fa687885da36b001e501ab1cb6f9cfb3ddc19b078f65d4a3",
+        "submittedAt": 1786362803,
+        "evaluatedAt": 1786364992,
+        "rubricVersion": "content-bounty-rubric-v2",
+        "evaluatorVersion": "content-bounty-evaluator-v2.1-json-envelope"
+      },
+      "payout": {
+        "recipient": "0x7fD87C28F4345ee8A4124511e16084464ca2E123",
+        "balanceBefore": "1999059535278303440",
+        "balanceAfter": "2000059535278303440",
+        "balanceDelta": "1000000000000000",
+        "expectedReward": "1000000000000000",
+        "deltaMatchesReward": true,
+        "balancesSimulated": false,
+        "persistentProofValid": true
+      }
+    }
+  },
+  "transactions": [
+    {
+      "label": "recover v2.1.1 deployment",
+      "hash": "0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93",
+      "status": null,
+      "recovered": true,
+      "acceptedPhaseObserved": false,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": false,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T02:59:57.767Z",
+          "requestedStatus": "RECOVERY_LOOKUP",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live clear rejection",
+      "hash": "0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T03:00:10.999Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "PROCESSING",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T03:11:49.987Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T03:15:08.479Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T03:28:43.522Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T03:30:11.853Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:22:19.926Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:47:54.497Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:06:46.442Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:17:11.630Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T07:38:34.801Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T23:20:37.032Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:16:09.759Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:32:55.693Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T05:08:03.002Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T06:09:24.581Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T09:19:35.109Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "submit clear rejection evidence",
+      "hash": "0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T03:30:28.076Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:00:26.192Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:22:21.579Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:47:56.206Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:06:48.210Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:17:13.360Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T07:38:36.414Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T23:20:39.305Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:16:12.294Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:32:59.222Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T05:08:05.070Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T06:09:26.428Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T09:19:36.899Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "evaluate clear rejection",
+      "hash": "0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T04:01:02.149Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:22:23.443Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:31:02.904Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:47:57.948Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:06:52.839Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:17:15.025Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T07:38:38.125Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T23:20:42.647Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:16:16.574Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:33:02.547Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T05:08:08.636Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T06:09:29.664Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T09:19:41.020Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live mutation inconclusive",
+      "hash": "0xe66cbe68a7f0c99ca6dbfdeabfe3bd5864abed77faf23562dbfe38b519181677",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xe66cbe68a7f0c99ca6dbfdeabfe3bd5864abed77faf23562dbfe38b519181677",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T04:31:19.076Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T04:48:01.168Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:06:56.413Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T05:17:18.219Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "submit mutable evidence",
+      "hash": "0xf69aa7aac4bdf2c65ddc7837c2754cc4bff2224d01c38abd7e66e4dca68d228d",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xf69aa7aac4bdf2c65ddc7837c2754cc4bff2224d01c38abd7e66e4dca68d228d",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": false,
+      "successfulFinalizationObserved": false,
+      "separateAcceptedAndFinalizedObservations": false,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T05:13:31.251Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FAILED",
+          "terminal": true,
+          "statusName": "LEADER_TIMEOUT",
+          "resultName": "IDLE",
+          "executionResultName": "NOT_VOTED",
+          "failureReason": "The leader timed out before reaching a successful decision."
+        }
+      ]
+    },
+    {
+      "label": "submit mutable evidence",
+      "hash": "0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T05:24:01.891Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:16:32.010Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "expire Live mutation inconclusive",
+      "hash": "0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T07:38:59.435Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-09T23:20:48.533Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live mutation inconclusive [20260809232050-2]",
+      "hash": "0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-09T23:21:08.696Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:16:26.225Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T03:33:04.467Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T05:08:10.576Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "cancel Live mutation inconclusive [20260809232050-2]",
+      "hash": "0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T03:33:20.941Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T05:08:14.402Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live mutation inconclusive [20260810050816-3]",
+      "hash": "0xa00fdbdf715bbbe9f6ac434f509cb0363a8dd62bc14daed63b2121b48c784963",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xa00fdbdf715bbbe9f6ac434f509cb0363a8dd62bc14daed63b2121b48c784963",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T05:08:30.581Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T06:09:33.006Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T09:19:42.969Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "submit mutable evidence",
+      "hash": "0x7f9d3471c2ef46d6250588be23cbece4ee4ef137544faba51f14a2c5b217b6e1",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x7f9d3471c2ef46d6250588be23cbece4ee4ef137544faba51f14a2c5b217b6e1",
+      "status": "EVM_REVERTED_OR_NOT_PROCESSED",
+      "recovered": false,
+      "acceptedPhaseObserved": false,
+      "successfulFinalizationObserved": false,
+      "separateAcceptedAndFinalizedObservations": false,
+      "observations": []
+    },
+    {
+      "label": "cancel Live mutation inconclusive [20260810050816-3]",
+      "hash": "0xda52eb56290cb6db9c1c796d75ba634c4f849357c3fecd83fa7fec9fa104d7d7",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xda52eb56290cb6db9c1c796d75ba634c4f849357c3fecd83fa7fec9fa104d7d7",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T09:19:59.161Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T09:50:28.729Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live mutation inconclusive [20260810095031-4]",
+      "hash": "0xd1fdcf41b6df3d076c1d4bf83c0ef663dc123d8b7b7a2caac800884569225243",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xd1fdcf41b6df3d076c1d4bf83c0ef663dc123d8b7b7a2caac800884569225243",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T09:50:50.166Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T10:20:54.940Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "submit mutable evidence",
+      "hash": "0xfd320a47cd0cea98008ff91f14334d1d7242e1da13b1fe59a926b07a659ea842",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xfd320a47cd0cea98008ff91f14334d1d7242e1da13b1fe59a926b07a659ea842",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T10:21:43.863Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T10:51:29.880Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "evaluate mutated evidence",
+      "hash": "0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T10:51:51.761Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T11:22:45.956Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "post Live clear approval and payout [20260809025953-1]",
+      "hash": "0xc3ed971df471998cb0bdb1de9414f6c2148d98b188174bdc07cb67acf6be9071",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0xc3ed971df471998cb0bdb1de9414f6c2148d98b188174bdc07cb67acf6be9071",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T11:23:01.477Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T11:53:15.264Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "submit clear approval evidence",
+      "hash": "0x13dfa13fbc51d842426999d030fc5608b4662565e60223cb0697f91aa4ebce5c",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x13dfa13fbc51d842426999d030fc5608b4662565e60223cb0697f91aa4ebce5c",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T11:59:52.870Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T12:29:45.247Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    },
+    {
+      "label": "evaluate clear approval",
+      "hash": "0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227",
+      "explorer": "https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227",
+      "status": null,
+      "recovered": false,
+      "acceptedPhaseObserved": true,
+      "successfulFinalizationObserved": true,
+      "separateAcceptedAndFinalizedObservations": true,
+      "observations": [
+        {
+          "observedAt": "2026-08-10T12:30:30.458Z",
+          "requestedStatus": "ACCEPTED",
+          "phase": "ACCEPTED",
+          "terminal": false,
+          "statusName": "ACCEPTED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        },
+        {
+          "observedAt": "2026-08-10T13:00:29.237Z",
+          "requestedStatus": "FINALIZED",
+          "phase": "FINALIZED",
+          "terminal": true,
+          "statusName": "FINALIZED",
+          "resultName": "AGREE",
+          "executionResultName": "FINISHED_WITH_RETURN"
+        }
+      ]
+    }
+  ],
+  "limitations": {
+    "fabricatedLeaderDisagreement": "The public SDK/testnets expose no leader-result fabrication hook; use an authorized validator harness when GenLayer provides one."
+  }
+}

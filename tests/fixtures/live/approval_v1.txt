@@ -1,0 +1,7 @@
+ContentBounty live approval fixture v1
+
+CONTENT BOUNTY LIVE PASS
+
+Official GenLayer documentation: https://docs.genlayer.com/
+
+This stable raw-text fixture satisfies both live approval rubric requirements.

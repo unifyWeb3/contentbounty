@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: genlayerlabs/genvm
+          ref: 387e1a66e920cb2dfadcdce40ab2d28da02efd1e
+          path: .genvm
+          sparse-checkout: runners/genlayer-py-std
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install pinned Python toolchain
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Full semantic contract lint
+        env:
+          GENVM_VERSION: v0.2.16
+          GENVM_SOURCE_MODE: release
+          GENVM_REPO: genlayerlabs/genvm
+        run: npm run check:contract
+
+      - name: Direct Mode contract tests
+        env:
+          GENVM_PY_STD_SOURCE: ${{ github.workspace }}/.genvm/runners/genlayer-py-std
+        run: npm run test:contract -- --quiet
+
+      - name: Evidence preparation tests
+        run: npm run test:evidence -- --quiet
+
+      - name: Network selection tests
+        run: npm run test:network
+
+      - name: Live lifecycle classification tests
+        run: npm run test:lifecycle
+
+      - name: Validate sanitized Bradbury proof
+        run: npm run verify:live-proof
+
+      - name: Live evidence hosting tests
+        run: npm run test:hosting
+
+      - name: Frontend classifier and configuration tests
+        run: npm --prefix frontend test
+
+      - name: Frontend typecheck and production build
+        env:
+          VITE_GENLAYER_NETWORK: testnetBradbury
+          VITE_CONTRACT_ADDRESS: '0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04'
+        run: npm run build:frontend
+
+      - name: Verify authoritative address and reject historical bundle address
+        run: npm run verify:frontend-bundle
+
+      - name: Diff and generated-file check
+        run: |
+          git diff --check
+          git diff --exit-code
