@@ -11,7 +11,11 @@ import {
   recoverFinalizedDeployment,
   validateRecoveryProofArtifact,
 } from '../../scripts/live-deployment-recovery.mjs'
-import { waitForLiveLifecycle } from '../../scripts/live-lifecycle.mjs'
+import {
+  LIVE_FINALIZED_WAIT_INTERVAL_MS,
+  LIVE_FINALIZED_WAIT_RETRIES,
+  waitForLiveLifecycle,
+} from '../../scripts/live-lifecycle.mjs'
 import { selectLiveProofMode } from '../../scripts/live-proof-mode.mjs'
 import { preflightLiveRun } from '../../scripts/live-run-preflight.mjs'
 import {
@@ -186,7 +190,10 @@ async function waitLifecycle(client, hash, label, chain, proof, checkpoint, exis
     client,
     hash,
     acceptedOptions: { retries: 180, interval: 3000 },
-    finalizedOptions: { retries: 360, interval: 5000 },
+    finalizedOptions: {
+      retries: LIVE_FINALIZED_WAIT_RETRIES,
+      interval: LIVE_FINALIZED_WAIT_INTERVAL_MS,
+    },
     onObservation: (observation) => {
       recordTransactionObservation(transactionProof, observation)
       checkpoint()

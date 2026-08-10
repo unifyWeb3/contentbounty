@@ -41,7 +41,9 @@ const executionFailureReasons = {
   NONDET_DISAGREE: 'Contract execution ended with nondeterministic disagreement.',
 }
 
-export const LIVE_TRANSIENT_RPC_RETRIES = 360
+export const LIVE_FINALIZED_WAIT_RETRIES = 2160
+export const LIVE_FINALIZED_WAIT_INTERVAL_MS = 5000
+export const LIVE_TRANSIENT_RPC_RETRIES = 2160
 export const LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS = 5000
 
 function normalizeName(value) {

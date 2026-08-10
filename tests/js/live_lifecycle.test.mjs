@@ -7,6 +7,8 @@ import {
 } from 'genlayer-js/types'
 import {
   classifyLiveReceipt,
+  LIVE_FINALIZED_WAIT_RETRIES,
+  LIVE_FINALIZED_WAIT_INTERVAL_MS,
   LIVE_TRANSIENT_RPC_RETRIES,
   LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS,
   waitForLiveLifecycle,
@@ -17,9 +19,12 @@ const successful = {
   txExecutionResultName: ExecutionResult.FINISHED_WITH_RETURN,
 }
 
-test('default transient RPC budget spans a full Bradbury finality interval', () => {
+test('default finality and transient RPC budgets span three Bradbury hours', () => {
   assert.ok(
-    LIVE_TRANSIENT_RPC_RETRIES * LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS >= 30 * 60 * 1000,
+    LIVE_FINALIZED_WAIT_RETRIES * LIVE_FINALIZED_WAIT_INTERVAL_MS >= 3 * 60 * 60 * 1000,
+  )
+  assert.ok(
+    LIVE_TRANSIENT_RPC_RETRIES * LIVE_TRANSIENT_RPC_RETRY_INTERVAL_MS >= 3 * 60 * 60 * 1000,
   )
 })
 

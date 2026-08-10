@@ -1915,3 +1915,12 @@ receipt wait. Terminal consensus/execution states still fail immediately. This
 prevents intermittent Bradbury read failures from prematurely ending an
 otherwise healthy accepted transaction while preserving a finite external
 blocker boundary.
+
+Follow-up read-only evidence showed the accepted replacement post still was not
+finalizable roughly 51 minutes after its `createdTimestamp`; the official
+Bradbury consensus-data `canFinalize` view returned `false`. Therefore a
+30-minute finalized-receipt timeout was also too short under normal Bradbury
+appeal timing, independent of RPC instability. The runner now uses one shared,
+tested three-hour bound for finalized receipt polling and transient lifecycle
+read errors. This remains finite and fail-closed while allowing the public
+testnet's observed appeal/finality interval to complete.
