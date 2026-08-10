@@ -162,6 +162,7 @@ export function replaceScenarioRecord(record, generatedAt) {
     evaluationDeadline: record.evaluationDeadline,
     status: record.status,
     replacementReason: record.replacementReason,
+    recoveryCorrections: record.recoveryCorrections,
   }]
   const sequence = history.length + 1
   const baseTitle = record.title.replace(/ \[[0-9]+-[0-9]+\]$/, '')
@@ -173,6 +174,7 @@ export function replaceScenarioRecord(record, generatedAt) {
       generatedAt,
       sequence,
     }),
+    recoveryCorrections: [...(record.recoveryCorrections ?? [])],
     history,
   }
 }
@@ -190,4 +192,39 @@ export function replaceTerminallyFailedPostScenario(record, transaction, generat
       ? `POST_TRANSACTION_FAILED: ${observation.failureReason}`
       : 'POST_TRANSACTION_FAILED',
   }, generatedAt)
+}
+
+export function reconcileHistoricalSubmissionTransactionReuse(
+  record,
+  observedAt = new Date().toISOString(),
+) {
+  if (!record?.submissionTransaction) return record
+  const currentHash = record.submissionTransaction.toLowerCase()
+  const historical = (record.history ?? []).find((item) =>
+    typeof item.submissionTransaction === 'string'
+    && item.submissionTransaction.toLowerCase() === currentHash
+    && Number(item.bountyId) !== Number(record.bountyId))
+  if (!historical) return record
+  if (record.submissionId !== null && record.submissionId !== undefined) {
+    throw new Error(
+      `Stored ${record.scenarioKey} submission ID reuses a historical transaction from another bounty`,
+    )
+  }
+  const alreadyRecorded = (record.recoveryCorrections ?? []).some((item) =>
+    item.type === 'CLEARED_HISTORICAL_SUBMISSION_TRANSACTION_REUSE'
+    && item.transaction?.toLowerCase() === currentHash)
+  return {
+    ...record,
+    submissionTransaction: null,
+    recoveryCorrections: alreadyRecorded
+      ? record.recoveryCorrections
+      : [...(record.recoveryCorrections ?? []), {
+        type: 'CLEARED_HISTORICAL_SUBMISSION_TRANSACTION_REUSE',
+        observedAt,
+        transaction: record.submissionTransaction,
+        historicalBountyId: historical.bountyId,
+        currentBountyId: record.bountyId,
+        reason: 'A label-only recovery attached a finalized transaction from an expired scenario history entry; exact current-bounty binding was absent.',
+      }],
+  }
 }

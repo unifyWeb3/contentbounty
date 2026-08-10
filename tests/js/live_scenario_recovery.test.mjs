@@ -81,6 +81,17 @@ test('preserves exact closure transaction in replacement history', () => {
   assert.equal(replaced.closureTransaction, null)
 })
 
+test('preserves recovery corrections across scenario replacement history', () => {
+  const original = {
+    ...createScenarioRecord({ scenarioKey: 'mutation', baseTitle: 'Mutable', evidenceUri: uri, generatedAt: '2026-08-09T01:02:03Z' }),
+    bountyId: 1,
+    recoveryCorrections: [{ type: 'CLEARED_HISTORICAL_SUBMISSION_TRANSACTION_REUSE' }],
+  }
+  const replaced = replaceScenarioRecord(original, '2026-08-10T01:00:00Z')
+  assert.deepEqual(replaced.recoveryCorrections, original.recoveryCorrections)
+  assert.deepEqual(replaced.history[0].recoveryCorrections, original.recoveryCorrections)
+})
+
 test('replaces only an exact terminally failed post, never accepted or RPC-ambiguous state', () => {
   const scenario = {
     ...createScenarioRecord({ scenarioKey: 'mutation', baseTitle: 'Mutable', evidenceUri: uri, generatedAt: '2026-08-09T01:02:03Z' }),

@@ -89,7 +89,6 @@ export async function ensureScenarioSubmission({
   listSubmissions,
   creator,
   findTransaction,
-  findStoredTransaction,
   waitTransaction,
   submitContent,
   checkpointScenario,
@@ -112,7 +111,6 @@ export async function ensureScenarioSubmission({
   const storedSubmissionTransaction = storedTransaction({
     explicitHash: scenario.submissionTransaction,
     findTransaction,
-    findStoredTransaction,
     description: 'submission',
   })
   if (exact) {

@@ -30,6 +30,7 @@ import { beginMutation, confirmMutation, MUTATION_STATES, reconcileMutationState
 import {
   BRADBURY_SCENARIO_WINDOW_SECONDS,
   createScenarioRecord,
+  reconcileHistoricalSubmissionTransactionReuse,
   replaceTerminallyFailedPostScenario,
   replaceScenarioRecord,
   scenarioDeadlineAction,
@@ -145,7 +146,7 @@ export function recoverExistingScenarioRecords(proof, mutableEvidenceUri = proce
       bountyId: null,
       submissionId: null,
       postTransaction: proof.transactions.find((item) => item.label === 'post Live mutation inconclusive')?.hash ?? null,
-      submissionTransaction: proof.transactions.filter((item) => item.label === 'submit mutable evidence').at(-1)?.hash ?? null,
+      submissionTransaction: null,
       closureAction: closureTransaction ? 'EXPIRE' : null,
       closureTransaction: closureTransaction?.hash ?? null,
     }
@@ -159,6 +160,11 @@ export function recoverExistingScenarioRecords(proof, mutableEvidenceUri = proce
         closureAction: 'EXPIRE',
         closureTransaction: closureTransaction.hash,
       }
+    }
+  }
+  for (const key of ['mutationScenario', 'approvalScenario']) {
+    if (proof.scenarios[key]) {
+      proof.scenarios[key] = reconcileHistoricalSubmissionTransactionReuse(proof.scenarios[key])
     }
   }
   return proof
@@ -350,12 +356,13 @@ export async function main() {
   proof.deployedSource = deployedSource
   proof.runner = runner
   if (storedProof) resumeProofArtifact(proof)
+  const checkpoint = () => checkpointProof(output, proof)
   recoverExistingScenarioRecords(proof)
   proof.scenarios.mutationState ??= {
     state: MUTATION_STATES.NOT_STARTED,
     mutableEvidenceUri: process.env.LIVE_MUTABLE_EVIDENCE_URI,
   }
-  const checkpoint = () => checkpointProof(output, proof)
+  checkpoint()
 
   try {
     if (proofMode.persistent) proof.preflight = await preflightLiveRun({
@@ -596,7 +603,6 @@ export async function main() {
         ),
         creator: creator.address,
         findTransaction: (hash) => transactionForScenario(hash, label),
-        findStoredTransaction: () => transactionForScenario(null, label),
         waitTransaction: (transaction) => waitScenarioTransaction(creatorClient, transaction, label),
         submitContent: () => submitWrite(creatorClient, creator, chain, proof, checkpoint, {
           address,

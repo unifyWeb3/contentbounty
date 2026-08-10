@@ -1845,3 +1845,42 @@ configuration, or push occurred during this offline remediation. The raw proof
 remains mode `0600`, `proofComplete=false`, and mutation `NOT_STARTED` pending
 the required clean commit and exact read-only reconciliation of
 `0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2`.
+
+### 2026-08-10 — exact replacement post recovered; submission-label defect found
+
+The deadline remediation was committed cleanly as
+`da3e815414a89c3035bceae555578c9380a9b651`. A bounded read-only Bradbury probe
+then established on its first attempt that replacement post
+`0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2`
+is `FINALIZED / AGREE / FINISHED_WITH_RETURN` and maps uniquely to bounty `2`,
+title `Live mutation inconclusive [20260809232050-2]`, poster
+`0x381b78F0C90a29cE2acDB718a9A4E1387004D3c7`, reward
+`1000000000000000` wei, status `OPEN`, submission deadline `1786332053`, and
+evaluation deadline `1786346453`.
+
+The single authorized resume stopped before any new transaction or webhook call.
+It correctly recorded runner commit `da3e815` with `dirty=false`, but exposed an
+unsafe legacy recovery path: the global label `submit mutable evidence` selected
+the old finalized submission transaction
+`0xf6951790e7933b6f257dbf4959d98384b05b824ea4588e6a602d5931384003be`
+from expired bounty `1` and temporarily attached it to bounty `2`. Exact
+on-chain submission matching then failed closed with:
+
+```text
+Stored submission transaction finalized but exact submission was not found
+```
+
+No transaction was submitted, mutation remains `NOT_STARTED`, and a public
+`/healthz` check still reports `mutableState=initial` with the committed
+rejection digest and 1,092-character count intact.
+
+The follow-up remediation removes label-only submission-transaction recovery.
+Submission recovery now requires the transaction hash already checkpointed on
+the exact scenario; an exact on-chain submission without that binding fails
+closed rather than guessing. On artifact load, a current scenario transaction
+that exactly duplicates a different-bounty history entry is cleared only when
+the current submission ID is still null, and the correction, old hash, and both
+bounty IDs are durably recorded before network preflight. A contradictory stored
+submission ID fails closed. Recovery corrections survive subsequent scenario
+replacement history. Focused syntax and four-file recovery tests pass; the fix
+must be committed cleanly before another signed action.

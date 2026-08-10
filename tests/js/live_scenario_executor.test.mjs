@@ -138,6 +138,45 @@ for (const scenarioKey of ['mutation', 'clear-approval']) {
     assert.equal(recovered.submissionId, 15)
   })
 
+  test(`${scenarioKey} never adopts a label-only submission transaction from another scenario`, async () => {
+    const base = { ...scenario(scenarioKey), bountyId: 12, postTransaction: `0xpost-${scenarioKey}` }
+    let submitCalls = 0
+    const submitted = await ensureScenarioSubmission({
+      scenario: base,
+      listSubmissions: async () => [],
+      creator,
+      findTransaction: () => null,
+      findStoredTransaction: () => ({ hash: '0xhistorical-label-match' }),
+      submitContent: async () => {
+        submitCalls += 1
+        return { hash: `0xcurrent-submit-${scenarioKey}` }
+      },
+      waitTransaction: async () => {},
+      checkpointScenario: () => {},
+    }).catch((error) => {
+      assert.match(error.message, /was not found exactly/)
+      return null
+    })
+    assert.equal(submitted, null)
+    assert.equal(submitCalls, 1)
+
+    await assert.rejects(ensureScenarioSubmission({
+      scenario: base,
+      listSubmissions: async () => [{
+        id: 15,
+        bounty_id: 12,
+        creator,
+        evidence_uri: base.evidenceUri,
+      }],
+      creator,
+      findTransaction: () => null,
+      findStoredTransaction: () => ({ hash: '0xhistorical-label-match' }),
+      submitContent: async () => ({ hash: '0xmust-not-submit' }),
+      waitTransaction: async () => {},
+      checkpointScenario: () => {},
+    }), /no stored transaction/)
+  })
+
   test(`${scenarioKey} refuses stored IDs without exact transaction checkpoints`, async () => {
     const record = { ...scenario(scenarioKey), bountyId: 12, submissionId: 15 }
     await assert.rejects(ensureScenarioBounty({
