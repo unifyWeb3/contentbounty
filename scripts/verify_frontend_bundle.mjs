@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const HISTORICAL_V0_2_ADDRESS = '0xFf546d6B1CD45d2859a705a7FA181807670B9015'
+export const AUTHORITATIVE_V2_1_1_ADDRESS = '0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04'
 
 function filesUnder(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -11,19 +12,31 @@ function filesUnder(directory) {
   })
 }
 
-export function verifyFrontendBundle(directory) {
+export function verifyFrontendBundle(directory, { expectedAddress = AUTHORITATIVE_V2_1_1_ADDRESS } = {}) {
   const root = resolve(directory)
   if (!statSync(root).isDirectory()) throw new Error('Frontend bundle directory does not exist: ' + root)
   const files = filesUnder(root)
-  const needle = HISTORICAL_V0_2_ADDRESS.toLowerCase()
+  const historicalNeedle = HISTORICAL_V0_2_ADDRESS.toLowerCase()
   const offenders = files.filter((path) => {
     const content = readFileSync(path)
-    return content.toString('utf8').toLowerCase().includes(needle)
+    return content.toString('utf8').toLowerCase().includes(historicalNeedle)
   })
   if (offenders.length) {
     throw new Error('Historical v0.2 address embedded in frontend bundle: ' + offenders.join(', '))
   }
-  return { directory: root, filesScanned: files.length, historicalAddressEmbedded: false }
+  const expectedNeedle = expectedAddress?.trim().toLowerCase()
+  const expectedAddressEmbedded = Boolean(expectedNeedle) && files.some((path) =>
+    readFileSync(path).toString('utf8').toLowerCase().includes(expectedNeedle))
+  if (expectedNeedle && !expectedAddressEmbedded) {
+    throw new Error(`Authoritative v2.1.1 address is absent from frontend bundle: ${expectedAddress}`)
+  }
+  return {
+    directory: root,
+    filesScanned: files.length,
+    historicalAddressEmbedded: false,
+    expectedAddress: expectedAddress || null,
+    expectedAddressEmbedded,
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

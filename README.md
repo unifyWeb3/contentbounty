@@ -16,11 +16,14 @@ evaluation. Deterministic contract code—not model prose—derives the verdict 
 controls settlement.
 
 The historical v0.2 Studionet deployment is not compatible with this contract
-or frontend. A v2.1.1 Bradbury deployment exists at
+or frontend. The proven v2.1.1 Bradbury deployment is at
 `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` (deployment transaction
-`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93`), but
-persistent proof is incomplete. The frontend remains unconfigured until the
-mutation, approval, and exact payout checks make `proofComplete=true`.
+`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93`).
+Persistent proof is complete: `proofComplete=true` and
+`persistentPayoutProofValid=true`. The tracked public proof is
+[docs/proofs/bradbury-persistent-proof-v1.json](docs/proofs/bradbury-persistent-proof-v1.json);
+the resumable raw artifact remains mode `0600` at
+`/tmp/contentbounty-live-consensus-proof.json`.
 
 ## Why GenLayer
 
@@ -178,22 +181,24 @@ the shorter three-check AST-only lint command.
 cd frontend
 npm install
 cp .env.example .env
-# Bradbury is the default. The deployed address exists, but keep the frontend
-# blank until the persistent proof completes.
+# `.env.example` supplies the proven Bradbury address.
 npm run dev
 ```
 
 Production verification from the repository root:
 
 ```bash
-VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= npm run build:frontend
+VITE_GENLAYER_NETWORK=testnetBradbury \
+VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
+npm run build:frontend
 npm run verify:frontend-bundle
 ```
 
-The UI intentionally remains unconfigured with an empty contract address. A
+Production mode requires a valid finalized v2 address and testnetBradbury. A
 build supplied with the historical v0.2 address fails, and the bundle verifier
-also rejects any generated asset containing that address. Studionet is never an
-implicit frontend choice; select it explicitly only for smoke/demo use.
+requires the authoritative Bradbury address while rejecting the historical one.
+Studionet is never an implicit production choice; select it explicitly only for
+smoke/demo use.
 
 ## Deploy v2
 
@@ -232,12 +237,19 @@ commitment to the committed adversarial rejection fixture, clear rejection,
 mutation inconclusive behavior, clear approval finality, and an exact
 persistent recipient balance delta. The fixture manifest records SHA-256
 `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`.
-The Bradbury deployment transaction is recoverable at
-`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93` with
-contract `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`; the live proof scenarios
-remain incomplete until the authorized recovery runner finishes.
-It is never run by CI and requires explicit authorization plus funded keys and
-external evidence fixtures. See [live consensus verification](docs/LIVE_CONSENSUS_TESTING.md).
+The finalized deployment, rejection, mutation, approval, and payout evidence
+is summarized in the tracked proof and linked from
+[live consensus verification](docs/LIVE_CONSENSUS_TESTING.md). The exact payout
+delta was `1000000000000000` wei (before
+`1999059535278303440`, after `2000059535278303440`). The live runner is never
+run by CI; any future run requires explicit authorization, funded keys, and
+external evidence fixtures. The public SDK still does not expose a supported
+fabricated-leader disagreement harness, which remains an explicitly recorded
+limitation rather than an unproven claim.
+
+The technical repository packet is complete. Frontend hosting, a demo video,
+competition-rule confirmation, and the external submission-form entry remain
+manual steps; this repository does not claim those actions were performed.
 
 ## Continuous integration
 

@@ -62,6 +62,9 @@ jobs:
       - name: Live lifecycle classification tests
         run: npm run test:lifecycle
 
+      - name: Validate sanitized Bradbury proof
+        run: npm run verify:live-proof
+
       - name: Live evidence hosting tests
         run: npm run test:hosting
 
@@ -71,10 +74,10 @@ jobs:
       - name: Frontend typecheck and production build
         env:
           VITE_GENLAYER_NETWORK: testnetBradbury
-          VITE_CONTRACT_ADDRESS: ''
+          VITE_CONTRACT_ADDRESS: '0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04'
         run: npm run build:frontend
 
-      - name: Verify historical address is absent from frontend bundle
+      - name: Verify authoritative address and reject historical bundle address
         run: npm run verify:frontend-bundle
 
       - name: Diff and generated-file check

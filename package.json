@@ -5,11 +5,14 @@
     "test:contract": ".venv/bin/pytest tests/direct -v",
     "test:evidence": ".venv/bin/pytest tests/unit/test_prepare_evidence.py -v",
     "test:network": "node --test tests/js/network_selection.test.mjs tests/js/live_proof_mode.test.mjs tests/js/frontend_bundle.test.mjs tests/js/deployer_guard.test.mjs",
-    "test:lifecycle": "node --test tests/js/live_lifecycle.test.mjs tests/js/live_proof_store.test.mjs tests/js/live_adversarial_fixture.test.mjs tests/js/live_deployment_recovery.test.mjs tests/js/live_run_preflight.test.mjs tests/js/live_mutation_state.test.mjs tests/js/live_scenario_recovery.test.mjs tests/js/live_scenario_executor.test.mjs tests/js/live_scenario_deadline_executor.test.mjs tests/js/live_consensus_recovery.test.mjs tests/js/live_provenance.test.mjs",
+    "test:lifecycle": "node --test tests/js/live_lifecycle.test.mjs tests/js/live_proof_store.test.mjs tests/js/live_proof_export.test.mjs tests/js/live_adversarial_fixture.test.mjs tests/js/live_deployment_recovery.test.mjs tests/js/live_run_preflight.test.mjs tests/js/live_mutation_state.test.mjs tests/js/live_scenario_recovery.test.mjs tests/js/live_scenario_executor.test.mjs tests/js/live_scenario_deadline_executor.test.mjs tests/js/live_consensus_recovery.test.mjs tests/js/live_provenance.test.mjs",
     "test:hosting": "node --test tests/js/live_evidence_worker.test.mjs",
     "test:live": "node tests/integration/live_consensus.mjs",
     "build:frontend": "npm --prefix frontend run build",
-    "verify:frontend-bundle": "node scripts/verify_frontend_bundle.mjs frontend/dist"
+    "verify:frontend-bundle": "node scripts/verify_frontend_bundle.mjs frontend/dist",
+    "export:live-proof": "node scripts/export_live_proof.mjs --input /tmp/contentbounty-live-consensus-proof.json --output docs/proofs/bradbury-persistent-proof-v1.json",
+    "verify:live-proof": "node scripts/export_live_proof.mjs --public-only docs/proofs/bradbury-persistent-proof-v1.json",
+    "verify:live-proof:online": "node scripts/verify_live_proof_online.mjs docs/proofs/bradbury-persistent-proof-v1.json"
   },
   "dependencies": {
     "genlayer-js": "^1.1.8"

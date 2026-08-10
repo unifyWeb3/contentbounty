@@ -3,10 +3,12 @@
 Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
 Contract.
 
-A Bradbury v2.1.1 deployment exists at
+A Bradbury v2.1.1 deployment is finalized and proven at
 `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but persistent live consensus
-proof is incomplete. Keep `VITE_CONTRACT_ADDRESS` blank until mutation
-inconclusive, clear approval finality, and exact payout-delta checks pass.
+proof is complete. The reproducible production input is tracked in
+`.env.production`; the raw resumable artifact is kept outside Git at
+`/tmp/contentbounty-live-consensus-proof.json` and the sanitized public copy is
+`docs/proofs/bradbury-persistent-proof-v1.json`.
 `AUDIT_REPORT.md` is an archival audit of the historical pre-v2 commit and its
 Studionet address; it is not an advertisement of the current frontend state.
 
@@ -48,6 +50,8 @@ Production verification:
 
 ```bash
 npm test
+VITE_GENLAYER_NETWORK=testnetBradbury \
+VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
 npm run build
 ```
 
@@ -60,7 +64,7 @@ address before bundling.
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `VITE_CONTRACT_ADDRESS` | yes | Deployed ContentBounty v2 address |
+| `VITE_CONTRACT_ADDRESS` | yes | Finalized Bradbury ContentBounty v2.1.1 address |
 | `VITE_GENLAYER_NETWORK` | no | `testnetBradbury` (default) or explicit `studionet` smoke/demo |
 
 The selector chooses the complete official `genlayer-js` chain object,
@@ -74,10 +78,9 @@ Bradbury. The selected official RPC is used as the identity reference; if it
 is unreachable, the app fails closed rather than guessing.
 
 The historical v0.2 address is incompatible with this frontend. The finalized
-v2.1.1 Bradbury contract already exists at
-`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but keep
-`VITE_CONTRACT_ADDRESS=` empty until the persistent proof completes; the UI
-remains honestly not configured meanwhile.
+v2.1.1 Bradbury contract is configured in `.env.production` at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`; production mode fails closed if
+the address is missing or the network is not testnetBradbury.
 
 Prepare evidence as UTF-8 raw text with the repository helper before publishing
 it at a stable, preferably content-addressed HTTPS URI. The normalized text

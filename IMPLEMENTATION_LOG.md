@@ -1924,3 +1924,178 @@ appeal timing, independent of RPC instability. The runner now uses one shared,
 tested three-hour bound for finalized receipt polling and transient lifecycle
 read errors. This remains finite and fail-closed while allowing the public
 testnet's observed appeal/finality interval to complete.
+
+## 2026-08-10 — persistent Bradbury proof completed and public evidence exported
+
+### Durable deployment and provenance
+
+- Network: `testnetBradbury`; proof mode: `persistent`; balances are not
+  simulated.
+- Contract:
+  `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`.
+- Contract explorer:
+  https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04
+- Deployment transaction:
+  https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93
+- Deployment lifecycle: `FINALIZED / AGREE / FINISHED_WITH_RETURN`.
+- Deployed source commit:
+  `c5c64c1ef007fa9b06d96aaa9255fe7322e6d356`.
+- Deployed source SHA-256:
+  `d19d74e60d5c869688690c2742bb4cd3875daafabb45ca0bfc994fbefd786ed7`.
+- The successful runner was committed at
+  `936864e822c754eaf2bf13432ef38e6a2a7c3d3c` and recorded `dirty=false`.
+  Deployment-source provenance remains separate from runner provenance.
+- Recovery/finality milestones preceding completion were committed as
+  `da3e815` (deadline-safe recovered bounties), `158c38b` (exact
+  scenario-bound submissions), `ef0937b` (transient Bradbury finality reads),
+  and `936864e` (three-hour bounded Bradbury finality observation).
+
+### Completed scenarios
+
+All completion checks are true and the raw artifact records `status=COMPLETE`,
+`proofComplete=true`, and `persistentPayoutProofValid=true`.
+
+- Clear rejection:
+  - post:
+    https://explorer-bradbury.genlayer.com/tx/0x8d8dafeed5f5da06e52a9966f05249b0abe9362c5cf4a08bd063118a98aa4d5d
+  - submission:
+    https://explorer-bradbury.genlayer.com/tx/0xaf1ebf600fb35d451d6ac795de1ab549c6b73b2b1863d200db28c1e18db5c4d4
+  - evaluation:
+    https://explorer-bradbury.genlayer.com/tx/0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33
+  - result: submission `0`, bounty `0`, `REJECTED / CRITERIA_NOT_MET`.
+  - committed and observed evidence SHA-256:
+    `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`;
+    1,092 characters.
+- Mutable evidence:
+  - final replacement post:
+    https://explorer-bradbury.genlayer.com/tx/0xd1fdcf41b6df3d076c1d4bf83c0ef663dc123d8b7b7a2caac800884569225243
+  - submission:
+    https://explorer-bradbury.genlayer.com/tx/0xfd320a47cd0cea98008ff91f14334d1d7242e1da13b1fe59a926b07a659ea842
+  - evaluation:
+    https://explorer-bradbury.genlayer.com/tx/0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa
+  - result: submission `2`, bounty `4`,
+    `INCONCLUSIVE / DIGEST_MISMATCH`.
+  - the crash-safe mutation state transitioned `PENDING` then `CONFIRMED`;
+    the webhook was called exactly once by the runner. A later public health
+    read reported Worker state `mutated`.
+- Clear approval and payout:
+  - post:
+    https://explorer-bradbury.genlayer.com/tx/0xc3ed971df471998cb0bdb1de9414f6c2148d98b188174bdc07cb67acf6be9071
+  - submission:
+    https://explorer-bradbury.genlayer.com/tx/0x13dfa13fbc51d842426999d030fc5608b4662565e60223cb0697f91aa4ebce5c
+  - evaluation and payout:
+    https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227
+  - result: submission `3`, bounty `5`,
+    `APPROVED / ALL_REQUIRED_CRITERIA_MET`.
+  - creator balance before: `1999059535278303440` wei.
+  - creator balance after: `2000059535278303440` wei.
+  - exact finalized delta and reward: `1000000000000000` wei.
+
+The exact cancellation/expiration recovery history remains in the proof. In
+particular, original expiration
+`0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4`
+and replacement cancellations
+`0xdbf75825439416bb3501eb0a8e88ea8fd411b0d3bd5794ba081c94a90bb588ce`
+and
+`0xda52eb56290cb6db9c1c796d75ba634c4f849357c3fecd83fa7fec9fa104d7d7`
+were reconciled without duplication. Reverted EVM wrapper attempt
+`0x7f9d3471c2ef46d6250588be23cbece4ee4ef137544faba51f14a2c5b217b6e1`
+did not create a GenLayer transaction and is retained as failed history.
+
+### Proof artifacts and independent validation
+
+- Raw resumable artifact:
+  `/tmp/contentbounty-live-consensus-proof.json`, mode `0600`, updated
+  `2026-08-10T13:00:31.144Z`. It remains outside Git.
+- Sanitized stable artifact:
+  `docs/proofs/bradbury-persistent-proof-v1.json`, schema
+  `contentbounty-bradbury-persistent-proof-v1`. It contains only public
+  lifecycle, scenario, payout, provenance, and explorer evidence.
+- `scripts/export_live_proof.mjs` validates completion gates, authoritative
+  deployment/source values, clean committed runner provenance, normalized
+  transaction convenience fields, exact scenario transaction bindings,
+  adversarial commitment, mutation result, payout arithmetic, raw mode `0600`,
+  and absence of authenticated/query-bearing URLs before exporting.
+- `scripts/verify_live_proof_online.mjs` is read-only and uses the official
+  Bradbury chain object. At `2026-08-10T13:56:30.600Z`, it independently
+  observed all ten deployment/final-scenario transactions as
+  `FINALIZED / AGREE / FINISHED_WITH_RETURN`, then matched on-chain submissions
+  `0`, `2`, and `3` to the public rejection, inconclusive mutation, and approval
+  records. The first restricted-network attempt encountered transient fetch
+  failures; the approved read-only retry succeeded without signing.
+
+### Frontend production configuration
+
+- `frontend/.env.production` now tracks the reproducible submission input:
+  `testnetBradbury` and the authoritative v2.1.1 contract address.
+- The ignored local `frontend/.env` contains the same public values and remains
+  mode `0600`.
+- Production builds fail if the address is missing/invalid or the network is
+  not testnetBradbury. Bundle verification requires the authoritative address
+  and rejects historical v0.2 address
+  `0xFf546d6B1CD45d2859a705a7FA181807670B9015`.
+- No frontend hosting deployment or public frontend URL was created in this
+  session. Hosting remains a manual external submission step.
+
+### Final clean verification results
+
+```text
+npm ci
+=> PASS; 217 packages installed.
+
+npm ci --prefix frontend
+=> PASS; 307 packages installed and 0 vulnerabilities. The first restricted
+   sandbox attempt hit the known esbuild binary EPERM check; the approved
+   non-restricted rerun passed without changing manifests or lockfiles.
+
+npm audit --omit=dev
+=> PASS; found 0 vulnerabilities.
+npm audit --omit=dev --prefix frontend
+=> PASS; found 0 vulnerabilities.
+
+npm run check:contract
+=> PASS; full GenVM v0.2.16 semantic check, 3 lint checks, contract validation,
+   10 methods (5 view, 5 write).
+
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std npm run test:contract -- --quiet
+=> PASS; 29 Direct Mode tests in 9.12s.
+
+npm run test:evidence -- --quiet
+=> PASS; 3 tests in 0.29s.
+npm run test:network
+=> PASS; 4 test files, 0 failures.
+npm run test:lifecycle
+=> PASS; 12 test files, 0 failures, including proof export and online-verifier
+   unit coverage.
+npm run test:hosting
+=> PASS; 1 test file, 0 failures.
+npm --prefix frontend test -- --run
+=> PASS; 4 files, 67 tests.
+
+(cd frontend && ./node_modules/.bin/vue-tsc -b --pretty false)
+=> PASS.
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 npm run build:frontend
+=> PASS; 461 modules transformed.
+npm run verify:frontend-bundle
+=> PASS; 8 files scanned, authoritative address embedded, historical address
+   absent.
+
+npm run verify:live-proof
+=> PASS; sanitized public proof validated.
+npm run export:live-proof -- --check
+=> PASS; tracked proof exactly matches the raw completed artifact.
+npm run verify:live-proof:online
+=> PASS after bounded read-only retry; 10 finalized lifecycles and 3 exact
+   on-chain submissions validated.
+
+node --check (deployment, live runner, recovery, proof export/online verifier)
+=> PASS.
+./node_modules/.bin/js-yaml .github/workflows/ci.yml
+=> PASS.
+```
+
+No contract redeployment, unrelated contract write, unrelated transfer,
+manual webhook call, private-key output, mutation-token output, or additional
+signed action occurred during proof export, frontend configuration, or final
+verification. Remaining manual/external items are frontend hosting, demo video,
+competition-rule confirmation, and submission-form entry.
