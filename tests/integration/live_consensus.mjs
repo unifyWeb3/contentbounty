@@ -30,9 +30,10 @@ import { beginMutation, confirmMutation, MUTATION_STATES, reconcileMutationState
 import {
   BRADBURY_SCENARIO_WINDOW_SECONDS,
   createScenarioRecord,
+  replaceTerminallyFailedPostScenario,
   replaceScenarioRecord,
   scenarioDeadlineAction,
-  validateStoredBountyScenario,
+  validateLiveBountyScenario,
   validateStoredSubmissionScenario,
 } from '../../scripts/live-scenario-recovery.mjs'
 import { isTransientRpcFailure } from '../../scripts/live-rpc-error.mjs'
@@ -42,6 +43,7 @@ import {
   selectDeployedSourceProvenance,
 } from '../../scripts/live-provenance.mjs'
 import {
+  ensureDeadlineSafeScenarioSubmission,
   ensureScenarioBounty,
   ensureScenarioClosure,
   ensureScenarioEvaluation,
@@ -455,8 +457,31 @@ export async function main() {
     }
 
     function checkpointScenarioRecord(scenario) {
+      const expectedEvidenceUri = scenario.scenarioKey === 'clear-rejection'
+        ? process.env.LIVE_REJECT_EVIDENCE_URI
+        : scenario.scenarioKey === 'mutation'
+          ? process.env.LIVE_MUTABLE_EVIDENCE_URI
+          : process.env.LIVE_APPROVE_EVIDENCE_URI
+      if (scenario.evidenceUri !== expectedEvidenceUri) {
+        throw new Error(`Stored ${scenario.scenarioKey} evidence URI does not match configured evidence URI`)
+      }
       proof.scenarios[scenarioProofKey(scenario)] = scenario
       checkpoint()
+    }
+
+    function validateConfiguredBountyScenario(scenario, bounty) {
+      const expectedEvidenceUri = scenario.scenarioKey === 'clear-rejection'
+        ? process.env.LIVE_REJECT_EVIDENCE_URI
+        : scenario.scenarioKey === 'mutation'
+          ? process.env.LIVE_MUTABLE_EVIDENCE_URI
+          : process.env.LIVE_APPROVE_EVIDENCE_URI
+      return validateLiveBountyScenario(scenario, bounty, deployer.address, {
+        reward,
+        evidenceUri: expectedEvidenceUri,
+        description: 'Live consensus integration evidence.',
+        rubricJson: rubric,
+        rubricVersion: 'content-bounty-rubric-v2',
+      })
     }
 
     function transactionForScenario(hash, label) {
@@ -496,28 +521,49 @@ export async function main() {
           functionName: 'get_bounty',
           args: [scenario.bountyId],
         })
-        scenario = validateStoredBountyScenario(scenario, existing, deployer.address)
+        scenario = validateConfiguredBountyScenario(scenario, existing)
         checkpointScenarioRecord(scenario)
         return scenario
       }
       const label = `post ${scenario.title}`
-      return ensureScenarioBounty({
-        scenario,
-        listBounties: () => readAll(deployerClient, address, 'get_bounties_page'),
-        poster: deployer.address,
-        findTransaction: (hash) => transactionForScenario(hash, label),
-        findStoredTransaction: () => transactionForScenario(null, label),
-        waitTransaction: (transaction) => waitScenarioTransaction(deployerClient, transaction, label),
-        submitPost: () => submitWrite(deployerClient, deployer, chain, proof, checkpoint, {
-          address,
-          functionName: 'post_bounty',
-          args: [scenario.title, 'Live consensus integration evidence.', rubric, BRADBURY_SCENARIO_WINDOW_SECONDS, BRADBURY_SCENARIO_WINDOW_SECONDS],
-          value: reward,
-        }, label, (hash) => {
-          proof.scenarios[scenarioProofKey(scenario)] = { ...scenario, postTransaction: hash }
-        }),
-        checkpointScenario: checkpointScenarioRecord,
-      })
+      try {
+        return await ensureScenarioBounty({
+          scenario,
+          listBounties: () => readAll(deployerClient, address, 'get_bounties_page'),
+          poster: deployer.address,
+          findTransaction: (hash) => transactionForScenario(hash, label),
+          findStoredTransaction: () => transactionForScenario(null, label),
+          waitTransaction: (transaction) => waitScenarioTransaction(deployerClient, transaction, label),
+          submitPost: () => submitWrite(deployerClient, deployer, chain, proof, checkpoint, {
+            address,
+            functionName: 'post_bounty',
+            args: [scenario.title, 'Live consensus integration evidence.', rubric, BRADBURY_SCENARIO_WINDOW_SECONDS, BRADBURY_SCENARIO_WINDOW_SECONDS],
+            value: reward,
+          }, label, (hash) => {
+            proof.scenarios[scenarioProofKey(scenario)] = { ...scenario, postTransaction: hash }
+          }),
+          checkpointScenario: checkpointScenarioRecord,
+        })
+      } catch (error) {
+        const checkpointed = proof.scenarios[scenarioProofKey(scenario)]
+        const transaction = checkpointed?.postTransaction
+          ? proof.transactions.find((item) =>
+            item.hash?.toLowerCase() === checkpointed.postTransaction.toLowerCase())
+          : null
+        const replacement = transaction
+          ? replaceTerminallyFailedPostScenario(
+            checkpointed,
+            transaction,
+            new Date().toISOString(),
+          )
+          : null
+        if (!replacement) throw error
+        if (replacement.history.length > 8) {
+          throw new Error(`Post failure replacement limit exceeded for ${scenario.scenarioKey}`)
+        }
+        checkpointScenarioRecord(replacement)
+        return postScenario(replacement)
+      }
     }
 
     async function submitScenario(scenario, label) {
@@ -643,9 +689,33 @@ export async function main() {
       return { scenario, bounty: bountyState, action }
     }
 
-    function shouldReplaceClosedScenario(action) {
-      return action.action === 'EXPIRE_AND_REPLACE'
-        || (action.action === 'TERMINAL' && ['EXPIRED', 'CANCELLED'].includes(action.reason))
+    async function ensureDeadlineSafeSubmission(scenario, label) {
+      return ensureDeadlineSafeScenarioSubmission({
+        scenario,
+        ensureBounty: postScenario,
+        ensureSubmission: (record) => submitScenario(record, label),
+        readBounty: (bountyId) => deployerClient.readContract({
+          address,
+          functionName: 'get_bounty',
+          args: [bountyId],
+        }),
+        validateBounty: validateConfiguredBountyScenario,
+        readSubmission: (submissionId) => creatorClient.readContract({
+          address,
+          functionName: 'get_submission',
+          args: [submissionId],
+        }),
+        validateSubmission: (record, submission) => validateStoredSubmissionScenario(
+          record,
+          submission,
+          creator.address,
+        ),
+        readChainTimestamp: () => latestChainTimestamp(deployerClient),
+        classifyDeadline: scenarioDeadlineAction,
+        reconcileClosure: reconcileScenarioClosure,
+        replaceScenario: (record) => replaceScenarioRecord(record, new Date().toISOString()),
+        checkpointScenario: checkpointScenarioRecord,
+      })
     }
 
     const rejectScenario = proof.scenarios.clearRejectionScenario
@@ -689,25 +759,7 @@ export async function main() {
 
     const mutableScenario = proof.scenarios.mutationScenario
       ?? createScenarioRecord({ scenarioKey: 'mutation', baseTitle: 'Live mutation inconclusive', evidenceUri: process.env.LIVE_MUTABLE_EVIDENCE_URI, generatedAt: proof.generatedAt })
-    let mutableRecord = mutableScenario
-    if (mutableRecord.bountyId !== null) {
-      const mutableBountyState = await deployerClient.readContract({ address, functionName: 'get_bounty', args: [mutableRecord.bountyId] })
-      const mutableSubmissionState = mutableRecord.submissionId === null ? null : await creatorClient.readContract({ address, functionName: 'get_submission', args: [mutableRecord.submissionId] })
-      mutableRecord = validateStoredBountyScenario(mutableRecord, mutableBountyState, deployer.address)
-      if (mutableSubmissionState) mutableRecord = validateStoredSubmissionScenario(mutableRecord, mutableSubmissionState, creator.address)
-      let action = scenarioDeadlineAction({ bounty: mutableBountyState, submission: mutableSubmissionState, chainTimestamp: await latestChainTimestamp(deployerClient) })
-      const reconciled = await reconcileScenarioClosure(mutableRecord, mutableBountyState, action)
-      mutableRecord = reconciled.scenario
-      action = reconciled.action
-      if (shouldReplaceClosedScenario(action)) {
-        mutableRecord = replaceScenarioRecord({ ...mutableRecord, status: 'EXPIRED', replacementReason: action.reason }, new Date().toISOString())
-        checkpointScenarioRecord(mutableRecord)
-      } else if (action.action !== 'REUSE') {
-        throw new Error(`Stored mutable scenario cannot resume: ${action.reason}`)
-      }
-    }
-    mutableRecord = await postScenario(mutableRecord)
-    mutableRecord = await submitScenario(mutableRecord, 'submit mutable evidence')
+    let mutableRecord = await ensureDeadlineSafeSubmission(mutableScenario, 'submit mutable evidence')
     checkpointScenarioRecord(mutableRecord)
     const mutationCheckpoint = proof.preflight?.mutationState
       ?? reconcileMutationState(proof.scenarios.mutationState, proof.preflight?.health?.mutableState ?? 'initial', process.env.LIVE_MUTABLE_EVIDENCE_URI)
@@ -740,28 +792,10 @@ export async function main() {
 
     const approvalScenario = proof.scenarios.approvalScenario
       ?? createScenarioRecord({ scenarioKey: 'clear-approval', baseTitle: 'Live clear approval and payout', evidenceUri: process.env.LIVE_APPROVE_EVIDENCE_URI, generatedAt: proof.generatedAt })
-    let approvalRecord = approvalScenario
-    if (approvalRecord.bountyId !== null) {
-      const approvalBountyState = await deployerClient.readContract({ address, functionName: 'get_bounty', args: [approvalRecord.bountyId] })
-      const approvalSubmissionState = approvalRecord.submissionId === null ? null : await creatorClient.readContract({ address, functionName: 'get_submission', args: [approvalRecord.submissionId] })
-      approvalRecord = validateStoredBountyScenario(approvalRecord, approvalBountyState, deployer.address)
-      if (approvalSubmissionState) approvalRecord = validateStoredSubmissionScenario(approvalRecord, approvalSubmissionState, creator.address)
-      let action = scenarioDeadlineAction({ bounty: approvalBountyState, submission: approvalSubmissionState, chainTimestamp: await latestChainTimestamp(deployerClient) })
-      const reconciled = await reconcileScenarioClosure(approvalRecord, approvalBountyState, action)
-      approvalRecord = reconciled.scenario
-      action = reconciled.action
-      if (shouldReplaceClosedScenario(action)) {
-        approvalRecord = replaceScenarioRecord({ ...approvalRecord, status: 'EXPIRED', replacementReason: action.reason }, new Date().toISOString())
-        checkpointScenarioRecord(approvalRecord)
-      } else if (action.action === 'CANCEL_AND_REPLACE') {
-        approvalRecord = replaceScenarioRecord({ ...approvalRecord, status: 'CANCELLED', replacementReason: action.reason }, new Date().toISOString())
-        checkpointScenarioRecord(approvalRecord)
-      } else if (action.action !== 'REUSE') {
-        throw new Error(`Stored approval scenario cannot resume: ${action.reason}`)
-      }
-    }
-    approvalRecord = await postScenario(approvalRecord)
-    approvalRecord = await submitScenario(approvalRecord, 'submit clear approval evidence')
+    let approvalRecord = await ensureDeadlineSafeSubmission(
+      approvalScenario,
+      'submit clear approval evidence',
+    )
     checkpointScenarioRecord(approvalRecord)
     const approveSubmission = approvalRecord.submissionId
     if (!proof.scenarios.approvalPayoutBaseline) {

@@ -1725,3 +1725,123 @@ hosting (1), frontend (67), typecheck, production build, bundle verification,
 dependency audits (0 vulnerabilities in root and frontend), CI YAML parsing,
 and secret-safe mode-600 checks for `.env` and `frontend/.env`. No signed
 transaction or mutation webhook call occurred during this offline milestone.
+
+The milestone was committed locally as
+`831d56102f92167ddc8ea8306b7c2f177268a9e4` (`fix: make live scenario
+recovery crash-safe`) before live execution.
+
+### 2026-08-09 — Bradbury recovery resumed; stopped on external RPC
+
+After commit `831d561`, the authorized read-only preflight passed without
+printing secrets:
+
+- network `testnetBradbury`, mode `persistent`;
+- deployer `0x381b78F0C90a29cE2acDB718a9A4E1387004D3c7` balance
+  `23995141894446959450` wei;
+- creator `0x7fD87C28F4345ee8A4124511e16084464ca2E123` balance
+  `1999497892899400940` wei;
+- accounts distinct and neither is blocklisted;
+- Worker `mutableState=initial`;
+- rejection digest
+  `efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`,
+  1,092 normalized characters.
+
+The single authoritative `npm run test:live` invocation reconciled the
+finalized expiration transaction
+`0xda8b176f3671b7fe4cfd2f2b23801377285119f0267144903b619f68e3ffc8d4`
+and preserved it in the expired scenario history. It then posted the unique
+replacement mutable bounty:
+
+`0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2`
+
+Explorer:
+`https://explorer-bradbury.genlayer.com/tx/0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2`
+
+The runner observed `ACCEPTED / AGREE / FINISHED_WITH_RETURN`, then Bradbury
+consensus-data `eth_call` repeatedly failed while waiting for finalization.
+After the bounded retry window it exited nonzero and atomically checkpointed
+`/tmp/contentbounty-live-consensus-proof.json` (mode 0600) with
+`status=BLOCKED_EXTERNAL_RPC`, timestamp `2026-08-09T23:31:39.044Z`, and
+`proofComplete=false`. Current completion checks remain:
+
+```json
+{
+  "deploymentFinalized": true,
+  "clearRejection": true,
+  "adversarialRejectionVerified": true,
+  "mutationInconclusive": false,
+  "clearApprovalFinalized": false,
+  "persistentPayoutDelta": false
+}
+```
+
+The replacement scenario has its exact post transaction checkpointed but no
+bounty ID, submission transaction, submission ID, or evaluation transaction
+yet. Mutation remains `NOT_STARTED`; the webhook was not called and the Worker
+still reports `initial`. Do not post another bounty. The next safe action is a
+single resume of the same artifact after Bradbury consensus-data RPC is stable,
+allowing exact post-transaction recovery before any submission. The frontend
+address remains blank. Nothing was pushed.
+
+### 2026-08-10 — deadline-safe recovered-post remediation (pending commit)
+
+The remaining recovered-post deadline gap is closed before any further signed
+action. After an exact checkpointed post transaction is finalized and its bounty
+ID is recovered, the runner now re-reads that exact bounty and a fresh Bradbury
+chain timestamp before considering `submit_content`. It validates exact poster,
+title, reward, description, rubric JSON/version, configured evidence URI,
+recognized status, ordered deadlines, and transaction provenance. If the
+submission window closed during RPC downtime, the runner checkpoints and
+reconciles exactly one `cancel_bounty` transaction while the bounty is still
+`OPEN` and inside evaluation grace, or exactly one `expire_bounty` transaction
+after evaluation grace, preserves the closure in scenario history, and creates
+a uniquely titled replacement. Restarts recover each post, closure, bounty, and
+submission checkpoint rather than duplicating a write. A post is replaced after
+failure only when its exact final observation is explicitly terminal; accepted,
+nonterminal, or RPC-ambiguous observations fail closed.
+
+The same deadline-safe executor is used for the mutation and approval scenarios.
+An existing finalized submission remains bound to its original scenario through
+its evaluation window, while a scenario that has passed evaluation grace is
+expired and replaced without reusing an ambiguous title. Documentation now says
+the authoritative Bradbury contract exists while persistent proof and frontend
+configuration remain incomplete.
+
+Clean-install and verification results for this milestone:
+
+```text
+npm ci
+=> PASS; added 217 packages.
+npm ci --prefix frontend
+=> PASS; added 307 packages. The first sandboxed attempt could not execute the
+   esbuild binary (EPERM); the same command passed outside that sandbox-only
+   execution restriction.
+npm audit --omit=dev
+=> PASS; found 0 vulnerabilities.
+npm audit --omit=dev --prefix frontend
+=> PASS; found 0 vulnerabilities.
+npm run check:contract
+=> PASS; 3 semantic checks and contract validation (10 methods: 5 view, 5 write).
+GENVM_PY_STD_SOURCE=/tmp/contentbounty-genvm-sparse.PYI8ug/genvm/runners/genlayer-py-std npm run test:contract -- --quiet
+=> PASS; 29 Direct Mode tests in 16.37s.
+npm run test:evidence -- --quiet
+=> PASS; 3 tests in 0.21s.
+npm run test:network
+=> PASS; 4 files, 4 passed, 0 failed.
+npm run test:lifecycle
+=> PASS; 11 files, 11 passed, 0 failed, including deadline/crash recovery.
+npm run test:hosting
+=> PASS; 1 file, 1 passed, 0 failed.
+npm --prefix frontend test -- --run
+=> PASS; 4 files, 67 tests.
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS= npm run build:frontend
+=> PASS; vue-tsc and production build, 461 modules transformed.
+npm run verify:frontend-bundle
+=> PASS; 8 files scanned; historical v0.2 address absent.
+```
+
+No Bradbury write, mutation webhook call, deployment, signing, frontend address
+configuration, or push occurred during this offline remediation. The raw proof
+remains mode `0600`, `proofComplete=false`, and mutation `NOT_STARTED` pending
+the required clean commit and exact read-only reconciliation of
+`0xb31e357f4c3e0f6199ce34ee9f585a53d9e7c42c42907ced374507e26f8adda2`.

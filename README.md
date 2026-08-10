@@ -178,7 +178,8 @@ the shorter three-check AST-only lint command.
 cd frontend
 npm install
 cp .env.example .env
-# Bradbury is the default; set a finalized v2.1.1 address when one exists
+# Bradbury is the default. The deployed address exists, but keep the frontend
+# blank until the persistent proof completes.
 npm run dev
 ```
 

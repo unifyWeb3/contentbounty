@@ -231,3 +231,77 @@ export async function ensureScenarioClosure({
   await waitTransaction(submitted)
   return scenario
 }
+
+function replaceableDeadlineAction(action) {
+  return action.action === 'CANCEL_AND_REPLACE'
+    || action.action === 'EXPIRE_AND_REPLACE'
+    || (action.action === 'TERMINAL' && ['CANCELLED', 'EXPIRED'].includes(action.reason))
+}
+
+export async function ensureDeadlineSafeScenarioSubmission({
+  scenario,
+  ensureBounty,
+  ensureSubmission,
+  readBounty,
+  validateBounty,
+  readSubmission,
+  validateSubmission,
+  readChainTimestamp,
+  classifyDeadline,
+  reconcileClosure,
+  replaceScenario,
+  checkpointScenario,
+  maxReplacements = 8,
+}) {
+  let current = scenario
+  for (let replacementCount = 0; replacementCount <= maxReplacements; replacementCount += 1) {
+    checkpointScenario(current)
+    current = await ensureBounty(current)
+    checkpointScenario(current)
+
+    if (current.submissionId !== null || current.submissionTransaction) {
+      current = await ensureSubmission(current)
+      checkpointScenario(current)
+    }
+
+    const bounty = await readBounty(current.bountyId)
+    current = validateBounty(current, bounty)
+    checkpointScenario(current)
+
+    let submission = null
+    if (current.submissionId !== null) {
+      submission = await readSubmission(current.submissionId)
+      current = validateSubmission(current, submission)
+      checkpointScenario(current)
+    }
+
+    const chainTimestamp = await readChainTimestamp()
+    let action = classifyDeadline({ bounty, submission, chainTimestamp })
+    if (action.action === 'REUSE') {
+      if (current.submissionId === null) {
+        current = await ensureSubmission(current)
+        checkpointScenario(current)
+      }
+      return current
+    }
+    if (!replaceableDeadlineAction(action)) {
+      throw new Error(`Stored ${current.scenarioKey} scenario cannot resume: ${action.reason}`)
+    }
+
+    const reconciled = await reconcileClosure(current, bounty, action)
+    current = reconciled.scenario
+    action = reconciled.action
+    if (action.action !== 'TERMINAL' || !['CANCELLED', 'EXPIRED'].includes(action.reason)) {
+      throw new Error(
+        `Scenario closure did not reach CANCELLED or EXPIRED for ${current.title}: ${action.action}/${action.reason}`,
+      )
+    }
+    current = replaceScenario({
+      ...current,
+      status: reconciled.bounty.status,
+      replacementReason: action.reason,
+    })
+    checkpointScenario(current)
+  }
+  throw new Error(`Scenario replacement limit exceeded for ${scenario.scenarioKey}`)
+}

@@ -73,9 +73,11 @@ blocked and the UI instructs the user to change the wallet's chain-4221 RPC to
 Bradbury. The selected official RPC is used as the identity reference; if it
 is unreachable, the app fails closed rather than guessing.
 
-The historical v0.2 address is incompatible with this frontend. Until a
-finalized v2.1.1 Bradbury address is supplied, keep
-`VITE_CONTRACT_ADDRESS=` empty; the UI remains honestly not configured.
+The historical v0.2 address is incompatible with this frontend. The finalized
+v2.1.1 Bradbury contract already exists at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but keep
+`VITE_CONTRACT_ADDRESS=` empty until the persistent proof completes; the UI
+remains honestly not configured meanwhile.
 
 Prepare evidence as UTF-8 raw text with the repository helper before publishing
 it at a stable, preferably content-addressed HTTPS URI. The normalized text

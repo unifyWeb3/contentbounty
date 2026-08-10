@@ -100,13 +100,17 @@ blocked until GenLayer supplies or authorizes an appropriate validator harness;
 the proof output records the limitation rather than claiming completion.
 
 The runner resumes exact stored bounty and submission IDs and validates their
-title, creator, poster, and evidence URI. It never reuses a bounty merely
-because a title matches. Mutation is crash-safe: `NOT_STARTED` is checkpointed
-before the webhook, then `PENDING` before POST and `CONFIRMED` after a
-successful response. A Worker state of `mutated` without a matching checkpoint,
-or `initial` after `CONFIRMED`, fails closed. Expired scenarios are expired or
-cancelled where permitted and replaced with unique titles using four-hour
-submission and evaluation windows.
+transaction identity, title, creator, poster, reward, rubric, configured
+evidence URI, status, and deadlines. It never reuses a bounty merely because a
+title matches. After recovering or finalizing a post, it reads the exact bounty
+and current Bradbury chain timestamp again before any new `submit_content`
+write. A closed submission window is cancelled while the bounty is `OPEN`, or
+expired after evaluation grace, with the exact closure transaction checkpointed
+before a uniquely titled replacement is posted. Mutation is crash-safe:
+`NOT_STARTED` is checkpointed before the webhook, then `PENDING` before POST and
+`CONFIRMED` after a successful response. A Worker state of `mutated` without a
+matching checkpoint, or `initial` after `CONFIRMED`, fails closed. Replacement
+scenarios use four-hour submission and evaluation windows.
 
 Replacement scenarios are checkpointed before posting, after each submitted
 transaction hash, and immediately after recovering bounty/submission IDs.

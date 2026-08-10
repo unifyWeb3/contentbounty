@@ -76,6 +76,42 @@ export function validateStoredBountyScenario(record, bounty, poster) {
   }
 }
 
+export function validateLiveBountyScenario(record, bounty, poster, expected) {
+  const validated = validateStoredBountyScenario(record, bounty, poster)
+  let reward
+  try {
+    reward = BigInt(bounty.reward)
+  } catch {
+    throw new Error(`Stored scenario reward is malformed for ${record.scenarioKey}`)
+  }
+  if (reward !== BigInt(expected.reward)) {
+    throw new Error(`Stored scenario reward mismatch for ${record.scenarioKey}`)
+  }
+  if (record.evidenceUri !== expected.evidenceUri) {
+    throw new Error(`Stored ${record.scenarioKey} evidence URI does not match configured evidence URI`)
+  }
+  if (bounty.description !== expected.description) {
+    throw new Error(`Stored scenario description mismatch for ${record.scenarioKey}`)
+  }
+  if (bounty.rubric_json !== expected.rubricJson || bounty.rubric_version !== expected.rubricVersion) {
+    throw new Error(`Stored scenario rubric mismatch for ${record.scenarioKey}`)
+  }
+  const submissionDeadline = Number(bounty.submission_deadline)
+  const evaluationDeadline = Number(bounty.evaluation_deadline)
+  if (
+    !Number.isSafeInteger(submissionDeadline)
+    || !Number.isSafeInteger(evaluationDeadline)
+    || submissionDeadline <= 0
+    || evaluationDeadline <= submissionDeadline
+  ) {
+    throw new Error(`Stored scenario deadlines are malformed for ${record.scenarioKey}`)
+  }
+  if (!['OPEN', 'LOCKED', 'FILLED', 'CANCELLED', 'EXPIRED'].includes(bounty.status)) {
+    throw new Error(`Stored scenario status is unknown for ${record.scenarioKey}: ${bounty.status}`)
+  }
+  return validated
+}
+
 export function validateStoredSubmissionScenario(record, submission, creator) {
   if (record.submissionId === null || record.submissionId === undefined) {
     throw new Error('Stored scenario does not contain a submission ID')
@@ -139,4 +175,19 @@ export function replaceScenarioRecord(record, generatedAt) {
     }),
     history,
   }
+}
+
+export function replaceTerminallyFailedPostScenario(record, transaction, generatedAt) {
+  if (!record.postTransaction || record.postTransaction.toLowerCase() !== transaction?.hash?.toLowerCase()) {
+    throw new Error(`Failed post transaction does not match stored scenario ${record.scenarioKey}`)
+  }
+  const observation = transaction.observations?.at(-1)
+  if (observation?.phase !== 'FAILED' || observation.terminal !== true) return null
+  return replaceScenarioRecord({
+    ...record,
+    status: 'POST_TRANSACTION_FAILED',
+    replacementReason: observation.failureReason
+      ? `POST_TRANSACTION_FAILED: ${observation.failureReason}`
+      : 'POST_TRANSACTION_FAILED',
+  }, generatedAt)
 }
