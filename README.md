@@ -25,6 +25,8 @@ approval, and an exact reward balance delta to finalized Bradbury transactions.
 |---|---|
 | Product | https://contentbounty.vercel.app |
 | Source | https://github.com/unifyWeb3/contentbounty |
+| X walkthrough | [Watch on X](https://x.com/i/status/2087119821921993214) |
+| YouTube demo | [Watch on YouTube](https://youtu.be/wv_5xmYamDU) |
 | Bradbury contract | [`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
 | Deployment transaction | [`0x683451...4d93`](https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93) |
 | Persistent proof | [Bradbury proof artifact](docs/proofs/bradbury-persistent-proof-v1.json) |
