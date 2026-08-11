@@ -1,264 +1,294 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="ContentBounty" width="150" />
+<img src="docs/hero.png" alt="ContentBounty logo" width="150" />
 
 # ContentBounty v2
 
-**Escrow for creative work adjudicated by substantive GenLayer consensus.**
+**Escrow for creative work adjudicated by GenLayer consensus.**
+
+[![Live app](https://img.shields.io/badge/live-Bradbury-14532d)](https://contentbounty.vercel.app)
+[![CI](https://github.com/unifyWeb3/contentbounty/actions/workflows/ci.yml/badge.svg)](https://github.com/unifyWeb3/contentbounty/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 </div>
 
-ContentBounty lets a poster escrow a GEN reward against a bounded, ordered
-rubric. A creator submits a canonical raw-text HTTPS evidence URI. GenLayer
-leaders and validators render, normalize, and hash it during submission, then
-independently fetch, verify, extract observations, and judge every criterion at
-evaluation. Deterministic contract code—not model prose—derives the verdict and
-controls settlement.
+ContentBounty lets a poster define an ordered rubric and escrow a GEN reward for
+creative work. A creator submits public evidence, GenLayer validators evaluate
+every required criterion, and deterministic contract logic decides whether to
+reject, retry, or release the reward.
 
-The historical v0.2 Studionet deployment is not compatible with this contract
-or frontend. The proven v2.1.1 Bradbury deployment is at
-`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` (deployment transaction
-`0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93`).
-Persistent proof is complete: `proofComplete=true` and
-`persistentPayoutProofValid=true`. The tracked public proof is
-[docs/proofs/bradbury-persistent-proof-v1.json](docs/proofs/bradbury-persistent-proof-v1.json);
-the resumable raw artifact remains mode `0600` at
-`/tmp/contentbounty-live-consensus-proof.json`.
+The application is deployed on the GenLayer Bradbury testnet with a complete
+persistent proof covering rejection, evidence mutation, approval, and payout.
+
+## Start here
+
+| Resource | Link |
+| --- | --- |
+| Live application | [contentbounty.vercel.app](https://contentbounty.vercel.app) |
+| Bradbury contract | [View contract](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
+| Deployment transaction | [View transaction](https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93) |
+| Persistent proof | [View verified proof](docs/proofs/bradbury-persistent-proof-v1.json) |
+| Contract specification | [Read the v2 specification](docs/CONTENT_BOUNTY_V2_SPEC.md) |
+| Live verification guide | [Read the proof procedure](docs/LIVE_CONSENSUS_TESTING.md) |
+
+## The problem
+
+Traditional smart contracts can enforce objective rules, but they cannot
+determine whether creative work satisfies a natural-language brief. Moving that
+decision to a platform operator, judge, or private AI service reintroduces a
+trusted intermediary.
+
+ContentBounty keeps custody and settlement inside an Intelligent Contract while
+GenLayer validators perform the non-deterministic evaluation. The model supplies
+observations and criterion judgments. Deterministic code controls the status,
+recipient, and payment.
+
+## How it works
+
+```text
+Post bounty -> Submit evidence -> Reach consensus -> Settle escrow
+```
+
+1. **Post bounty**
+   The poster defines a title, description, ordered rubric, deadlines, and GEN
+   reward. The reward is escrowed by the contract.
+2. **Submit evidence**
+   A creator supplies a stable HTTPS URI containing canonical UTF-8 text.
+   Submission consensus renders, normalizes, hashes, and commits the evidence.
+3. **Reach consensus**
+   A leader evaluates the evidence and every required criterion. Validators
+   independently repeat the evidence pipeline and compare the fields that
+   control settlement.
+4. **Settle escrow**
+   Approved work receives the full reward. Rejected work remains unpaid.
+   Fetch, parser, or digest uncertainty returns an inconclusive result that can
+   be retried without misclassifying the creator.
 
 ## Why GenLayer
 
-Ordinary smart contracts cannot render web evidence or apply a natural-language
-rubric. An off-chain evaluator would reintroduce a trusted operator. GenLayer
-allows the non-deterministic work to run inside an Intelligent Contract while
-independent validators enforce the equivalence principle.
+ContentBounty uses GenLayer for work that an ordinary deterministic contract
+cannot perform safely:
 
-ContentBounty v2 uses:
+- `gl.nondet.web.render` retrieves bounded public evidence.
+- Submission consensus creates the authoritative evidence commitment.
+- `gl.nondet.exec_prompt` extracts observations and evaluates the rubric.
+- `gl.vm.run_nondet_unsafe` defines an independent validator policy.
+- Exact equivalence fields prevent prose differences from changing settlement.
+- Finalized `emit_transfer` messages release rewards or refunds.
 
-- `gl.nondet.web.render` for bounded text evidence;
-- submission consensus to create the renderer-derived evidence commitment;
-- `gl.nondet.exec_prompt` for observation extraction and criterion judgment;
-- single-line JSON prompt envelopes for untrusted rubric, evidence, and
-  observation values;
-- `gl.vm.run_nondet_unsafe` for an explicit independent validator policy;
-- deterministic criterion bits, score bucket, decision, and reason code;
-- finalized `emit_transfer` messages for payout or refunds.
+Validators must match these payout-controlling fields:
 
-## Contract model
+| Field | Purpose |
+| --- | --- |
+| Evidence SHA-256 | Detects changed rendered evidence |
+| Decision | `APPROVE`, `REJECT`, or `INCONCLUSIVE` |
+| Criteria bits | Ordered per-criterion results, such as `101` |
+| Score bucket | Deterministic integer from 0 to 4 |
+| Reason code | Fixed machine-readable outcome |
 
-### Bounty lifecycle
+Feedback is stored for users, but feedback wording never controls payment. The
+model never chooses the payout amount or recipient.
+
+## Verified Bradbury deployment
+
+| Item | Value |
+| --- | --- |
+| Network | `testnetBradbury` |
+| Chain ID | `4221` |
+| Contract | `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` |
+| Deployment status | `FINALIZED / AGREE / FINISHED_WITH_RETURN` |
+| Proof status | `COMPLETE` |
+| Persistent payout proof | `true` |
+
+The tracked proof records deployment and scenario transaction hashes, source
+and runner provenance, final lifecycle observations, and payout arithmetic:
+
+[docs/proofs/bradbury-persistent-proof-v1.json](docs/proofs/bradbury-persistent-proof-v1.json)
+
+### Proven outcomes
+
+| Scenario | Bounty | Submission | Result | Reason |
+| --- | ---: | ---: | --- | --- |
+| Clear rejection | `0` | `0` | `REJECTED` | `CRITERIA_NOT_MET` |
+| Mutated evidence | `4` | `2` | `INCONCLUSIVE` | `DIGEST_MISMATCH` |
+| Clear approval | `5` | `3` | `APPROVED` | `ALL_REQUIRED_CRITERIA_MET` |
+
+The approved scenario produced an exact finalized recipient balance increase of
+`1000000000000000` wei, equal to the escrowed reward. The proof uses
+persistent public testnet values and does not simulate balances.
+
+## Contract lifecycle
 
 ```text
 OPEN -> LOCKED -> FILLED
   |
   +-> CANCELLED
-  +---------------> EXPIRED
+  +-> EXPIRED
 ```
 
-- `OPEN`: funded, no submission; the poster may cancel.
-- `LOCKED`: at least one submission; cancellation is disabled.
-- `FILLED`: the first consensus-approved submission won.
+- `OPEN`: funded and accepting a submission. The poster may cancel before any
+  creator locks the bounty.
+- `LOCKED`: at least one submission exists. Poster cancellation is disabled.
+- `FILLED`: a consensus-approved submission won and the reward was emitted.
 - `CANCELLED`: an untouched bounty was refunded.
-- `EXPIRED`: evaluation grace ended without a winner; anyone may trigger the
-  refund.
+- `EXPIRED`: evaluation grace ended without a winner and the reward was
+  refunded.
 
-Submissions become `APPROVED`, `REJECTED`, `INCONCLUSIVE`, or `SUPERSEDED`.
-Inconclusive evaluations may retry up to three times. Fetch failure, digest
-mismatch, excessive evidence, and model/parser failure are inconclusive rather
-than dishonest rejections.
+Submissions can become `APPROVED`, `REJECTED`, `INCONCLUSIVE`, or
+`SUPERSEDED`. Inconclusive evaluations may retry up to three times.
 
-### Equivalence principle
+## Safety and finality
 
-The validator independently reruns the entire evidence pipeline and accepts a
-leader result only when these payout-controlling fields match exactly:
+- The frontend uses an injected external wallet and never requests or stores a
+  private key.
+- Unsupported networks, invalid production addresses, and historical contract
+  addresses fail closed.
+- Before every write, the frontend verifies Bradbury execution state and
+  consensus contract identity against the injected provider.
+- Evidence mutation produces `DIGEST_MISMATCH` instead of an approval or
+  dishonest rejection.
+- Transaction status distinguishes submission, processing, acceptance, and
+  finalization.
+- An accepted transaction is not presented as finalized.
+- Payout claims require finalized execution and an independently checked
+  recipient balance delta.
+- Live runner state, lifecycle observations, and mutation checkpoints are
+  persisted for crash-safe recovery.
 
-| Field | Purpose |
-|---|---|
-| evidence SHA-256 | detects changed rendered evidence |
-| decision | `APPROVE`, `REJECT`, or `INCONCLUSIVE` |
-| criteria bits | ordered per-criterion result, such as `101` |
-| score bucket | deterministic integer from 0–4 |
-| reason code | fixed machine-readable outcome |
+Bradbury and another GenLayer network share chain ID `4221`. If an injected
+wallet cannot be switched automatically, configure its chain-4221 RPC for
+Bradbury before attempting a write.
 
-Feedback wording is bounded and stored for users, but deliberately ignored for
-equivalence. The model never chooses a payout amount or recipient.
+## Quick start
 
-See [the v2 specification](docs/CONTENT_BOUNTY_V2_SPEC.md) and
-[implementation log](IMPLEMENTATION_LOG.md) for the complete design, commands,
-versions, results, blockers, and deployments.
+### Requirements
+
+- Node.js and npm
+- Python 3.12 for contract validation and Direct Mode tests
+
+Install dependencies:
+
+```bash
+npm ci
+npm ci --prefix frontend
+```
+
+Configure and run the frontend:
+
+```bash
+cp frontend/.env.example frontend/.env
+npm --prefix frontend run dev
+```
+
+The example environment selects Bradbury and the verified v2 contract. The app
+opens through the local URL printed by Vite.
+
+### Production build
+
+From the repository root:
+
+```bash
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 npm run build:frontend
+npm run verify:frontend-bundle
+```
+
+The production build rejects missing or incompatible configuration. Bundle
+verification requires the verified Bradbury address and rejects the historical
+v0.2 address.
 
 ## Prepare evidence
 
-Use UTF-8 raw text at a stable, preferably content-addressed HTTPS URI. The
-contract derives the authoritative SHA-256 through GenLayer WebRender during
-submission, so the frontend never asks users to guess a browser-DOM or normal
-HTTP-response digest. The repository helper reproduces the contract's line
-ending and outer-whitespace normalization and emits the exact canonical text,
-digest, URI, and counts:
+Evidence must be UTF-8 raw text at a stable, preferably content-addressed HTTPS
+URI. Normalized evidence must contain 1 to 16,000 characters.
+
+The helper reproduces the contract's line-ending and outer-whitespace
+normalization:
 
 ```bash
-.venv/bin/python scripts/prepare_evidence.py \
-  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
-  --file evidence.txt \
-  --write-canonical canonical-evidence.txt
+.venv/bin/python scripts/prepare_evidence.py --uri https://gateway.example/ipfs/<cid>/evidence.txt --file evidence.txt --write-canonical canonical-evidence.txt
 ```
 
-Publish the generated canonical file bytes at the supplied URI. Normalized
-evidence must contain 1–16,000 characters; empty, whitespace-only, or oversized
-content fails submission before any creator slot is consumed or bounty is
-locked. The contract's submission consensus remains authoritative and stores
-its renderer-derived digest; later mutation becomes an inconclusive digest
-mismatch.
+Publish the generated canonical file at the supplied URI. Submission consensus
+remains authoritative and stores the renderer-derived digest.
 
-## Frontend safety and finality
+## Test and verify
 
-The Vue frontend uses an injected external signer. It never asks for a private
-key and stores no wallet secret. It persists only transaction identifiers and
-observed lifecycle states.
-
-Before every write it fail-closed verifies the injected provider's selected
-consensus address, bytecode, and official consensus ABI identity probe.
-Bradbury shares chain ID `4221` with another network, and an injected wallet
-does not expose its RPC URL, so the app compares both providers at a stable
-common execution point. It requires the block hash, consensus bytecode, and
-`VERSION()` result to match at the latest height both providers report. An
-older block 2 confirmations behind is also checked for continuity. Identical
-history, bytecode, and probe output are treated as
-equivalent execution state; this is not a cryptographic proof of the wallet's
-RPC URL. A wallet that cannot be automatically switched must be manually
-configured to Bradbury's chain-4221 RPC; ambiguous identity blocks both
-payable and nonpayable writes. The guard permits at most 3 sampled head blocks
-of lag.
-
-The UI distinguishes:
-
-1. `SUBMITTED`: a consensus transaction id exists;
-2. `PROCESSING`: consensus, appeal, or finalization is still in progress;
-3. `ACCEPTED`: status is accepted, a majority agreed, and execution returned
-   successfully, but finalization may still be appealable;
-4. `FINALIZED`: final status, majority agreement, and successful execution are
-   all present.
-
-Even a finalized approved evaluation proves that the contract emitted the
-transfer; a recipient balance delta should still be checked before describing
-the reward as confirmed paid.
-
-## Repository
-
-```text
-contracts/content_bounty.py       ContentBounty v2 Intelligent Contract
-tests/direct/                     adversarial GenLayer Direct Mode tests
-docs/CONTENT_BOUNTY_V2_SPEC.md    lifecycle and equivalence specification
-docs/LIVE_CONSENSUS_TESTING.md    authorized live-proof procedure
-frontend/                         external-signer Vue application
-deploy.mjs                        validated multi-network deployment helper
-IMPLEMENTATION_LOG.md             auditable implementation-session record
-AUDIT_REPORT.md                    archival audit of the historical `a09fe6a` commit; not current v2 state
-```
-
-## Verify the contract
-
-The pinned Python toolchain is recorded in `requirements.txt` and
-`IMPLEMENTATION_LOG.md`.
+Create the Python environment:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+```
+
+Run the main checks:
+
+```bash
 npm run lint:contract
 npm run check:contract
 npm run test:contract
 npm run test:evidence
 npm run test:network
+npm run test:lifecycle
+npm run test:hosting
+npm --prefix frontend test
 ```
 
-Direct Mode may need `GENVM_PY_STD_SOURCE` pointed at an official compatible
-GenVM Python runner checkout when its normal cache is unavailable.
-`check:contract` runs full semantic validation with GenVM `v0.2.16`; it is not
-the shorter three-check AST-only lint command.
-
-## Run the frontend
+Validate the tracked public proof:
 
 ```bash
-cd frontend
-npm install
-cp .env.example .env
-# `.env.example` supplies the proven Bradbury address.
-npm run dev
+npm run verify:live-proof
+npm run verify:live-proof:online
 ```
 
-Production verification from the repository root:
+The online verifier is read-only. It confirms finalized lifecycle state and
+matches the three proven submissions against the public contract.
 
-```bash
-VITE_GENLAYER_NETWORK=testnetBradbury \
-VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
-npm run build:frontend
-npm run verify:frontend-bundle
+GitHub Actions runs semantic contract validation, Direct Mode tests, evidence
+and recovery tests, frontend tests, type checking, the production build, proof
+validation, and generated-file checks.
+
+## Repository structure
+
+```text
+contracts/content_bounty.py       Intelligent Contract
+frontend/                         Vue application with external wallet signing
+hosting/live-evidence/            Public evidence Worker
+scripts/                          Deployment, recovery, proof, and safety tools
+tests/direct/                     GenLayer Direct Mode contract tests
+tests/js/                         Lifecycle, recovery, proof, and network tests
+tests/unit/                       Evidence preparation tests
+docs/CONTENT_BOUNTY_V2_SPEC.md    Contract and equivalence specification
+docs/LIVE_CONSENSUS_TESTING.md    Authorized live-proof procedure
+docs/proofs/                      Sanitized persistent public proof
+IMPLEMENTATION_LOG.md             Auditable implementation record
 ```
 
-Production mode requires a valid finalized v2 address and testnetBradbury. A
-build supplied with the historical v0.2 address fails, and the bundle verifier
-requires the authoritative Bradbury address while rejecting the historical one.
-Studionet is never an implicit production choice; select it explicitly only for
-smoke/demo use.
+`AUDIT_REPORT.md` documents the historical pre-v2 commit. It does not
+describe the current verified deployment.
 
-## Deploy v2
+## Live operations
 
-Deployment uses the root `genlayer-js` dependency and reads the deployer key
-from the process environment rather than a command-line argument. The network
-selector accepts only `studionet` or `testnetBradbury`; it
-uses the selected official chain object's RPC, explorer, chain ID, and consensus
-contracts:
+Deployment, recovery, and persistent proof execution are intentionally kept out
+of the quick-start path. They require explicit authorization, funded accounts,
+stable evidence fixtures, and careful lifecycle monitoring.
 
-```bash
-npm install
-GENLAYER_NETWORK=testnetBradbury \
-GENLAYER_DEPLOY_MODE=persistent \
-GENLAYER_DEPLOYER_PRIVATE_KEY=0x... \
-node deploy.mjs
-```
+Use the dedicated procedure:
 
-`GENLAYER_NETWORK` is required. A Studionet deployment is allowed only with
-`GENLAYER_DEPLOY_MODE=studionet-smoke` and is simulated, not persistent proof.
-Unsupported values and any unsuccessful receipt return a nonzero exit code. Do
-not commit the key. After successful finalization, record the network, contract
-address, transaction hash, source commit, and source SHA-256 in
-`IMPLEMENTATION_LOG.md`.
+[docs/LIVE_CONSENSUS_TESTING.md](docs/LIVE_CONSENSUS_TESTING.md)
 
-## Live consensus proof
+Do not rerun the completed proof, redeploy the verified contract, or call the
+mutation fixture unless a new authorized proof campaign explicitly requires it.
+Never commit private keys or mutation credentials.
 
-The opt-in integration runner deploys the current source, observes lifecycle
-receipts, exercises clear approval/rejection and mutable evidence failure, and
-verifies the finalized winner balance delta. Persistent proof mode accepts only
-`testnetBradbury`; Studionet requires the explicit
-`LIVE_PROOF_MODE=studionet-smoke` demo mode and is never valid settlement
-evidence. The runner checkpoints a mode-0600 proof artifact before the first
-transaction and after each lifecycle observation and scenario. Its
-`proofComplete` flag is true only after deployment finality, exact on-chain
-commitment to the committed adversarial rejection fixture, clear rejection,
-mutation inconclusive behavior, clear approval finality, and an exact
-persistent recipient balance delta. The fixture manifest records SHA-256
-`efa694452cf28565eb7b59ecf48bc684558dbc45c0eb09de43b4261ed70bf537`.
-The finalized deployment, rejection, mutation, approval, and payout evidence
-is summarized in the tracked proof and linked from
-[live consensus verification](docs/LIVE_CONSENSUS_TESTING.md). The exact payout
-delta was `1000000000000000` wei (before
-`1999059535278303440`, after `2000059535278303440`). The live runner is never
-run by CI; any future run requires explicit authorization, funded keys, and
-external evidence fixtures. The public SDK still does not expose a supported
-fabricated-leader disagreement harness, which remains an explicitly recorded
-limitation rather than an unproven claim.
+## Technical documentation
 
-The technical repository packet is complete. Frontend hosting, a demo video,
-competition-rule confirmation, and the external submission-form entry remain
-manual steps; this repository does not claim those actions were performed.
-
-## Continuous integration
-
-GitHub Actions installs the commit-pinned Python dependencies, uses the official
-GenVM `v0.2.16` source at commit
-`387e1a66e920cb2dfadcdce40ab2d28da02efd1e`, and runs full semantic lint,
-29 Direct Mode tests, evidence/network/proof-mode/lifecycle tests, 67 frontend
-tests, frontend typecheck/build, and diff checks.
+- [ContentBounty v2 specification](docs/CONTENT_BOUNTY_V2_SPEC.md)
+- [Live consensus testing and recovery](docs/LIVE_CONSENSUS_TESTING.md)
+- [Persistent Bradbury proof](docs/proofs/bradbury-persistent-proof-v1.json)
+- [Frontend safety model](frontend/README.md)
+- [Evidence Worker](hosting/live-evidence/README.md)
+- [Implementation log](IMPLEMENTATION_LOG.md)
 
 ## License
 
-[MIT](LICENSE) © unifyWeb3
+[MIT](LICENSE) Copyright 2026 unifyWeb3
