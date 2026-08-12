@@ -630,7 +630,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const options = parseArguments(process.argv.slice(2))
     if (options.publicOnly) {
       const path = resolve(options.publicOnly)
-      validatePublicLiveProof(JSON.parse(readFileSync(path, 'utf8')), { verifyRepository: true })
+      validatePublicLiveProof(JSON.parse(readFileSync(path, 'utf8')), { verifyRepository: false })
       console.log(`Validated sanitized live proof: ${path}`)
     } else {
       const result = exportLiveProof(options)

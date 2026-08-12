@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -228,6 +229,21 @@ test('exports mode-0644 public JSON and detects stale tracked output', () => {
     () => exportLiveProof({ input, output, check: true, verifyRepository: false }),
     /public proof is stale/,
   )
+})
+
+test('CLI public-only validation does not require local commit objects', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'contentbounty-public-proof-cli-'))
+  const proofPath = join(directory, 'public.json')
+  const publicProof = sanitizeCompletedLiveProof(completedProof())
+  publicProof.provenance.runner.commit = 'f'.repeat(40)
+  writeFileSync(proofPath, `${JSON.stringify(publicProof)}\n`)
+
+  const result = spawnSync(process.execPath, ['scripts/export_live_proof.mjs', '--public-only', proofPath], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  })
+  assert.equal(result.status, 0, result.stderr || result.stdout)
+  assert.match(result.stdout, /Validated sanitized live proof/)
 })
 
 test('independently verifies completion transactions and exact on-chain scenario records', async () => {
