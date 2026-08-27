@@ -1,14 +1,17 @@
-# ContentBounty v2 frontend
+# ContentBounty v2.2 frontend
 
-Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the v2 Intelligent
-Contract.
+Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the current v2.2
+Intelligent Contract source.
 
-A Bradbury v2.1.1 deployment is finalized and proven at
-`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, but persistent live consensus
-proof is complete. The reproducible production input is tracked in
-`.env.production`; the raw resumable artifact is kept outside Git at
-`/tmp/contentbounty-live-consensus-proof.json` and the sanitized public copy is
-`docs/proofs/bradbury-persistent-proof-v1.json`.
+The tracked environment files still point to the historical Bradbury v2.1.1
+deployment at `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` because v2.2 has not
+been deployed. That address is proven for the old immediate-settlement source,
+but it does not expose the v2.2 claim-tag, challenge, or delayed-claim methods.
+It must not be treated as compatible with this frontend. After a later v2.2
+deployment and proof run, update the deployment environment separately.
+
+The historical sanitized proof remains at
+`docs/proofs/bradbury-persistent-proof-v1.json`. It verifies v2.1.1 only.
 `AUDIT_REPORT.md` is an archival audit of the historical pre-v2 commit and its
 Studionet address; it is not an advertisement of the current frontend state.
 
@@ -19,6 +22,13 @@ Studionet address; it is not an advertisement of the current frontend state.
 - Parses GEN amounts as exact 18-decimal integers.
 - Accepts only the evidence URI; submission consensus derives the canonical
   GenLayer-rendered SHA-256 instead of trusting a browser-calculated digest.
+- Reads the creator-specific claim tag before submission and warns that an
+  immutable post cannot be repaired if the tag was omitted before publishing.
+- Mirrors the contract source-host allowlist for immediate feedback while
+  leaving the contract as the authoritative URL validator.
+- Treats `APPROVED_PENDING` as unpaid, displays the challenge deadline and
+  challenge state, and exposes separate review, finalization, timeout, and
+  creator claim actions.
 - Persists transaction identifiers and observed lifecycle states so evidence
   survives reload.
 - Separates `SUBMITTED`, `ACCEPTED`, and `FINALIZED`; it does not treat an
@@ -55,6 +65,11 @@ VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
 npm run build
 ```
 
+This command proves that the current source type-checks and bundles against the
+tracked public configuration. It does not make the historical v2.1.1 contract
+compatible with v2.2 calls. End-to-end write verification requires a future
+v2.2 deployment.
+
 Repository-level production verification additionally runs
 `npm run verify:frontend-bundle`, which fails if generated assets contain the
 historical v0.2 address. The Vite production configuration also rejects that
@@ -64,7 +79,7 @@ address before bundling.
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `VITE_CONTRACT_ADDRESS` | yes | Finalized Bradbury ContentBounty v2.1.1 address |
+| `VITE_CONTRACT_ADDRESS` | yes | Current deployment address. The tracked value is historical v2.1.1 until v2.2 is deployed. |
 | `VITE_GENLAYER_NETWORK` | no | `testnetBradbury` (default) or explicit `studionet` smoke/demo |
 
 The selector chooses the complete official `genlayer-js` chain object,
@@ -77,19 +92,41 @@ blocked and the UI instructs the user to change the wallet's chain-4221 RPC to
 Bradbury. The selected official RPC is used as the identity reference; if it
 is unreachable, the app fails closed rather than guessing.
 
-The historical v0.2 address is incompatible with this frontend. The finalized
-v2.1.1 Bradbury contract is configured in `.env.production` at
-`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`; production mode fails closed if
-the address is missing or the network is not testnetBradbury.
+The historical v0.2 address and currently configured v2.1.1 address are both
+incompatible with the new v2.2 method surface. Production mode fails closed if
+the address is missing or the network is not testnetBradbury, but address-format
+validation alone cannot prove contract-version compatibility.
 
-Prepare evidence as UTF-8 raw text with the repository helper before publishing
-it at a stable, preferably content-addressed HTTPS URI. The normalized text
-must contain 1–16,000 characters; empty/whitespace-only and 16,001-character
-submissions fail before a bounty is locked:
+Before publishing, select the bounty and wallet, copy the displayed `cb-...`
+claim tag, and include that exact token in the source. For immutable publishing
+surfaces this must happen before publication; this version has no
+post-publication or same-submission repair path. The source must use HTTPS and one
+of the contract-supported families: GitHub, raw GitHub, GitHub Gists, Mirror,
+HackMD, Medium, or Substack (including valid Substack subdomains). The
+normalized rendered text must contain 1-16,000 characters.
+
+The repository helper can reproduce the text normalization for a local file,
+but the contract render remains authoritative:
 
 ```bash
 .venv/bin/python scripts/prepare_evidence.py \
-  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
+  --uri https://raw.githubusercontent.com/owner/repository/main/evidence.txt \
   --file evidence.txt \
   --write-canonical canonical-evidence.txt
 ```
+
+## Delayed settlement flow
+
+An `APPROVE` evaluation result is displayed as `APPROVED_PENDING`, not paid.
+The local countdown is informational; the GenVM transaction timestamp remains
+authoritative. Before the deadline, any eligible non-creator may open one
+challenge with a fixed reason, allowlisted HTTPS evidence, and the exact bond
+returned by `get_challenge_bond`.
+
+`review_challenge` only records an agreed proposal. `finalize_challenge` applies
+an agreed uphold or dismiss result, while `timeout_challenge` clears an eligible
+inconclusive or elapsed challenge. The frontend shows these permissionless
+actions from the bounty detail and links creator activity records back to that
+action surface. Only the creator's separate `claim_reward` transaction releases
+the bounty reward after the original challenge deadline and with no active
+challenge.

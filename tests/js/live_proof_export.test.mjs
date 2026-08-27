@@ -190,6 +190,14 @@ test('builds and validates a deterministic sanitized public proof', () => {
   assert.equal(validatePublicLiveProof(publicProof), publicProof)
 })
 
+test('historical public proof validates its recorded commit without claiming current-source equality', () => {
+  const publicProof = sanitizeCompletedLiveProof(completedProof())
+  assert.equal(
+    validatePublicLiveProof(publicProof, { verifyRepository: true }),
+    publicProof,
+  )
+})
+
 test('rejects incomplete gates and inconsistent lifecycle convenience fields', () => {
   const incomplete = completedProof()
   incomplete.completionChecks.mutationInconclusive = false

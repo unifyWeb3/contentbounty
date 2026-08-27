@@ -17,6 +17,19 @@ def optional_local_genvm_sdk(monkeypatch):
     slower than a sparse official source checkout.
     """
 
+    from gltest.direct.vm import VMContext
+
+    original_refresh = VMContext._refresh_gl_message
+
+    def refresh_message_context(vm):
+        original_refresh(vm)
+        gl_module = sys.modules.get("genlayer.gl")
+        if gl_module is not None and getattr(gl_module, "message_raw", None) is not None:
+            gl_module.message_raw["datetime"] = vm._datetime
+            gl_module.message_raw["chain_id"] = vm._chain_id
+
+    monkeypatch.setattr(VMContext, "_refresh_gl_message", refresh_message_context)
+
     source = os.environ.get("GENVM_PY_STD_SOURCE")
     if not source:
         yield

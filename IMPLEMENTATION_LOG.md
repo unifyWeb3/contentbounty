@@ -1,5 +1,12 @@
 # ContentBounty v2 implementation log
 
+> **Historical log notice:** This log's latest deployment entry documents the
+> Bradbury v2.1.1 system. The current v2.2 implementation, prerequisite findings,
+> and post-edit verification are documented in `README.md`,
+> `docs/CONTENT_BOUNTY_V2_SPEC.md`, and `docs/LIVE_CONSENSUS_TESTING.md`.
+> The configured Bradbury address is not verified as compatible with v2.2, and
+> no v2.2 deployment has been performed.
+
 ## 2026-08-06 — audit intake and toolchain selection
 
 ### Decisions and assumptions

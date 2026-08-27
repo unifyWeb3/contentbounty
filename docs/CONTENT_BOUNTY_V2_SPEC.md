@@ -1,21 +1,26 @@
-# ContentBounty v2 contract specification
+# ContentBounty v2.2 contract specification
 
 ## Scope
 
-This specification covers the v2 Intelligent Contract and its verification
-tooling. The v0.2 deployment and frontend are historical and intentionally
-incompatible with this storage model.
+This specification covers the current v2.2 Intelligent Contract and its
+verification tooling. The v0.2 deployment, the historical v2.1.1 Bradbury
+deployment, and their proof artifacts are intentionally incompatible with this
+storage and settlement model.
 
 ## Lifecycle
 
 ### Bounties
 
-`OPEN -> LOCKED -> FILLED`
+`OPEN -> LOCKED -> FILLED`, with `LOCKED -> OPEN` after an upheld challenge
+when no other submission is still evaluable.
 
-- `OPEN`: escrow is funded and no submission exists. The poster may cancel.
-- `LOCKED`: at least one valid submission exists. Cancellation is forbidden.
-- `FILLED`: the first consensus-approved submission won and the full escrow was
-  emitted to its creator for execution on transaction finalization.
+- `OPEN`: escrow is funded and there is no provisional or final winner. It may
+  be untouched, or it may contain rejected historical submissions after an
+  upheld challenge. Cancellation still requires zero submissions.
+- `LOCKED`: at least one submission remains evaluable, or a provisional winner
+  is awaiting settlement. Cancellation is forbidden.
+- `FILLED`: the creator called `claim_reward` after the challenge window and the
+  full escrow was emitted for execution on transaction finalization.
 - `CANCELLED`: an `OPEN` bounty was cancelled and refunded.
 - `EXPIRED`: the evaluation grace period ended without a winner and the escrow
   was refunded. Expiry is permissionless.
@@ -26,7 +31,17 @@ the former and provides a bounded grace period.
 
 ### Submissions
 
-`PENDING -> APPROVED | REJECTED | INCONCLUSIVE`
+`PENDING | INCONCLUSIVE -> APPROVED_PENDING | REJECTED | INCONCLUSIVE`
+
+`APPROVED_PENDING -> APPROVED | REJECTED`
+
+`PENDING | INCONCLUSIVE -> SUPERSEDED` when another creator claims the reward.
+
+`APPROVED_PENDING` is a provisional consensus result. It records the approval
+timestamp and 48-hour challenge deadline while the bounty remains `LOCKED`.
+It is not paid, does not supersede competing submissions, and can be blocked by
+`active_challenge_id`. Only `claim_reward` may transition it to final
+`APPROVED`.
 
 - `INCONCLUSIVE` is retryable until `MAX_EVALUATION_ATTEMPTS` or the evaluation
   deadline. Evaluation-time fetch failures, empty or oversized evidence, digest
@@ -34,12 +49,13 @@ the former and provides a bounded grace period.
   Submission-time evidence preparation is stricter: a consensus-rendered value
   must contain 1-16,000 normalized characters or the transaction fails before
   any submission, creator index, or bounty lock state is written.
-- When one submission is approved, every other non-terminal submission becomes
-  `SUPERSEDED`.
+- When `claim_reward` finalizes one submission, every other pending or
+  inconclusive submission becomes `SUPERSEDED`.
 - One creator and one evidence digest may each appear at most once per bounty.
 
-The winner policy is first consensus-approved submission wins. Evaluation is
-permissionless so the poster cannot suppress a candidate.
+Only one provisional winner may exist at a time. An upheld challenge clears it
+and permits another evaluable submission to proceed. Evaluation is permissionless
+so the poster cannot suppress a candidate.
 
 ## Evidence model
 
@@ -50,6 +66,19 @@ Each submission stores:
   normalized GenLayer-rendered text;
 - submission and evaluation timestamps;
 - rubric/evaluator versions, attempt count, decision fields, and reason code.
+- a pre-submission, domain-separated claim tag and tag version;
+- provisional approval and challenge-deadline timestamps;
+- active/latest challenge IDs and a one-time reward-claimed flag.
+
+The claim tag is derived from the chain ID, contract address/version, bounty ID,
+and creator address using the runtime's Ethereum-compatible `Keccak256`, then
+shown as `cb-` plus 20 hexadecimal characters. It is checked case-insensitively
+with exact token boundaries during submission consensus and before evaluation
+prompts. The 80-bit prefix makes accidental birthday collisions about 4e-13 at
+one million tags while keeping the token practical for publication. This proves
+practical control sufficient to place the token in the
+rendered source at that time; it does not prove legal authorship, identity,
+copyright ownership, originality, permanent control, or truthfulness.
 
 `submit_content(bounty_id, evidence_uri)` does not accept a caller-calculated
 digest. Its leader and validators independently call
@@ -64,20 +93,21 @@ Evaluation independently repeats the same render and normalization and compares
 the result with the submission-time digest. Evidence over the documented size
 limit is not silently truncated; it produces
 `INCONCLUSIVE/EVIDENCE_TOO_LARGE`. A URI that mutates after submission produces
-`INCONCLUSIVE/DIGEST_MISMATCH`.
+`INCONCLUSIVE/DIGEST_MISMATCH`. A source whose stored claim tag is missing is
+deterministically rejected as `CLAIM_TAG_MISSING` before any LLM call.
 
 An HTTPS URI plus digest makes mutation detectable but does not guarantee
 availability. The supported preparation format is `content-bounty-text-v1`:
-UTF-8 raw text, no HTML/script rendering dependency, published at a stable,
-preferably content-addressed HTTPS URI (for example an IPFS gateway). The
-repository command below reproduces contract normalization and prints the
-canonical text, URI, digest, and counts; the on-chain submission render remains
-authoritative because a normal HTTP body or browser DOM is not assumed to equal
-GenLayer WebRender output.
+UTF-8 text on one of the explicitly allowed publishing surfaces. Arbitrary IPFS
+gateway hosts are not accepted by this version. The repository command below
+reproduces contract normalization and prints the canonical text, URI, digest,
+and counts; the on-chain submission render remains authoritative because a
+normal HTTP body or browser DOM is not assumed to equal GenLayer WebRender
+output.
 
 ```bash
 python scripts/prepare_evidence.py \
-  --uri https://gateway.example/ipfs/<cid>/evidence.txt \
+  --uri https://raw.githubusercontent.com/owner/repository/main/evidence.txt \
   --file evidence.txt \
   --write-canonical canonical-evidence.txt
 ```
@@ -135,6 +165,16 @@ impersonation, malicious rubric values, and injected extracted observations. A
 real-model test on the deployed network remains required before making an
 empirical prompt-injection-resistance claim.
 
+## Source policy
+
+Only canonical HTTPS hosts in the deterministic allowlist are accepted:
+`github.com`, `raw.githubusercontent.com`, `gist.github.com`, `mirror.xyz`,
+`hackmd.io`, `medium.com`, `substack.com`, and valid Substack subdomains.
+Credentials, fragments, ambiguous host forms, and misleading subdomains are
+rejected. The allowlist describes supported publishing surfaces and is not an
+ownership or authorship registry. X/Twitter is excluded until its renderer is
+reliable enough for deterministic consensus.
+
 ## Equivalence principle
 
 The contract uses `gl.vm.run_nondet_unsafe` with explicit leader-result type and
@@ -148,19 +188,40 @@ accepts the leader only when all payout-relevant fields agree exactly:
 - `APPROVE`, `REJECT`, or `INCONCLUSIVE` decision;
 - ordered per-criterion bit string;
 - deterministic score bucket;
-- reason code.
+- reason code;
+- claim-tag presence and source/evidence digests where applicable.
 
 Natural-language feedback is bounded and stored, but ignored for equivalence.
 Shape-only validation is forbidden. A well-formed fabricated approval for
 non-compliant evidence must be rejected by direct validator tests.
 
-## Settlement and finality
+## Challenges and settlement finality
 
-The approved transaction marks the bounty `FILLED` and emits the full escrow to
-the winning creator using the default finalized message behavior. Contract state
-records consensus outcome, not external-chain payout confirmation. Applications
-must distinguish `ACCEPTED` from `FINALIZED` and prove payout by finalized
-execution plus recipient balance delta.
+Challenges are opened only while a submission is `APPROVED_PENDING` and before
+its deadline. A fixed reason code and HTTPS evidence URI are required. The bond
+is the exact integer value
+`max(reward * 500 / 10000, 0.0001 GEN)`. The creator cannot challenge their own
+submission; the bounty poster may challenge. One active challenge is allowed.
+
+`review_challenge` is a second consensus proposal round. It independently
+renders the original and challenge evidence, verifies stored digests and the
+claim-tag state, performs deterministic checks first, then uses bounded prompts
+with both sources framed as untrusted data. It may store only an agreed
+`UPHOLD`, `DISMISS`, or `INCONCLUSIVE` proposal and never transfers funds.
+`finalize_challenge` is deterministic and routes a bond exactly once: upheld
+returns the bond to the challenger and rejects the submission; dismissed sends
+the bond to the submission creator and leaves the approval claimable; timeout
+returns the bond to the challenger and fails open to the approved result.
+
+Timeout is available after three agreed inconclusive reviews or after 48 hours
+from challenge creation. The elapsed-time path prevents validator disagreement
+from locking escrow forever.
+
+`claim_reward` is the sole creator-reward path. It requires the creator caller,
+elapsed original deadline, no active challenge, an unclaimed provisional winner,
+and a locked bounty. State is updated before the finalized transfer is emitted.
+Applications must distinguish `ACCEPTED` from `FINALIZED` and prove payout by a
+finalized claim transaction plus recipient balance delta.
 
 ## Boundedness
 

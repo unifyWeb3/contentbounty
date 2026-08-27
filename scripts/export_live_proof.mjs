@@ -244,11 +244,17 @@ function publicScenarioHistory(history, byHash) {
   })
 }
 
-function validateRepositoryProvenance(proof, repositoryRoot = REPOSITORY_ROOT) {
-  const contractPath = resolve(repositoryRoot, 'contracts/content_bounty.py')
-  const currentSource = readFileSync(contractPath)
-  const currentSha256 = createHash('sha256').update(currentSource).digest('hex')
-  requireEqual(currentSha256, DEPLOYED_SOURCE_SHA256, 'current contract source SHA-256')
+function validateRepositoryProvenance(
+  proof,
+  repositoryRoot = REPOSITORY_ROOT,
+  { requireCurrentSource = true } = {},
+) {
+  if (requireCurrentSource) {
+    const contractPath = resolve(repositoryRoot, 'contracts/content_bounty.py')
+    const currentSource = readFileSync(contractPath)
+    const currentSha256 = createHash('sha256').update(currentSource).digest('hex')
+    requireEqual(currentSha256, DEPLOYED_SOURCE_SHA256, 'current contract source SHA-256')
+  }
 
   for (const commit of [proof.deployedSource.commit, proof.runner.commit]) {
     const result = spawnSync('git', ['cat-file', '-e', `${commit}^{commit}`], {
@@ -565,7 +571,7 @@ export function validatePublicLiveProof(publicProof, {
     validateRepositoryProvenance({
       deployedSource: publicProof.provenance.deployedSource,
       runner: publicProof.provenance.runner,
-    }, repositoryRoot)
+    }, repositoryRoot, { requireCurrentSource: false })
   }
   return publicProof
 }

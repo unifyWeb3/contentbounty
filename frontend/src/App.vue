@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { createClient } from 'genlayer-js'
 import { TransactionStatus } from 'genlayer-js/types'
 import {
@@ -22,6 +22,13 @@ import {
   verifyInjectedWalletNetwork,
   type EthereumProvider,
 } from './lib/walletNetwork'
+import {
+  CHALLENGE_REASONS,
+  contractErrorMessage,
+  formatCountdown,
+  validateSourceUri,
+  type ChallengeReason,
+} from './lib/provenance'
 
 type Address = `0x${string}`
 
@@ -40,6 +47,8 @@ interface Bounty {
   submission_count: number
   has_winner: boolean
   winner_submission_id: number
+  has_provisional_winner: boolean
+  provisional_submission_id: number
 }
 
 interface Submission {
@@ -48,7 +57,7 @@ interface Submission {
   creator: string
   evidence_uri: string
   evidence_sha256: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'INCONCLUSIVE' | 'SUPERSEDED'
+  status: 'PENDING' | 'APPROVED_PENDING' | 'APPROVED' | 'REJECTED' | 'INCONCLUSIVE' | 'SUPERSEDED'
   attempt_count: number
   submitted_at: number
   evaluated_at: number
@@ -59,6 +68,37 @@ interface Submission {
   feedback: string
   rubric_version: string
   evaluator_version: string
+  claim_tag: string
+  claim_tag_version: string
+  approved_at: number
+  challenge_deadline: number
+  active_challenge_id: number
+  latest_challenge_id: number
+  reward_claimed: boolean
+}
+
+interface Challenge {
+  id: number
+  submission_id: number
+  bounty_id: number
+  challenger: string
+  reason_code: ChallengeReason
+  evidence_uri: string
+  evidence_sha256: string
+  bond: number | string | bigint
+  status: 'OPEN' | 'UPHELD' | 'DISMISSED' | 'TIMED_OUT'
+  created_at: number
+  review_deadline: number
+  attempt_count: number
+  proposed_outcome: '' | 'UPHOLD' | 'DISMISS' | 'INCONCLUSIVE'
+  proposed_reason_code: string
+  proposed_error_class: string
+  proposed_feedback: string
+  reviewed_at: number
+  finalized_at: number
+  bond_released: boolean
+  bond_recipient: string
+  bond_disposition: string
 }
 
 interface CriterionDraft {
@@ -68,7 +108,7 @@ interface CriterionDraft {
 
 interface TxEvidence {
   hash: string
-  action: 'POST' | 'SUBMIT' | 'EVALUATE' | 'CANCEL' | 'EXPIRE'
+  action: 'POST' | 'SUBMIT' | 'EVALUATE' | 'CANCEL' | 'EXPIRE' | 'CHALLENGE' | 'REVIEW_CHALLENGE' | 'FINALIZE_CHALLENGE' | 'TIMEOUT_CHALLENGE' | 'CLAIM'
   entityId?: number
   label: string
   submittedAt: number
@@ -100,6 +140,15 @@ const selectedBounty = ref<Bounty | null>(null)
 const submissions = ref<Submission[]>([])
 const activitySubmissions = ref<Submission[]>([])
 const transactions = ref<TxEvidence[]>(loadTransactions())
+const allowedSources = ref<string[]>([])
+const claimTag = ref('')
+const claimTagLoading = ref(false)
+const challenges = ref<Record<number, Challenge>>({})
+const challengeTarget = ref<Submission | null>(null)
+const challengeBond = ref(0n)
+const nowSeconds = ref(Math.floor(Date.now() / 1000))
+let clockHandle: number | undefined
+let claimTagRequestId = 0
 
 const postForm = ref({
   title: '',
@@ -114,6 +163,11 @@ const postForm = ref({
 })
 
 const submitForm = ref({ evidenceUri: '' })
+const challengeForm = ref({
+  reasonCode: 'RIGHTS_OR_PLAGIARISM' as ChallengeReason,
+  evidenceUri: '',
+  confirmed: false,
+})
 
 const connected = computed(() => Boolean(walletAddress.value))
 const contractConfigured = computed(() => /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS))
@@ -133,6 +187,13 @@ const verifiedFinalizedTransactions = computed(() => transactions.value.filter((
     txExecutionResultName: entry.executionResultName,
   }),
 ).length)
+const submitUriError = computed(() => {
+  const uri = submitForm.value.evidenceUri
+  return uri ? validateSourceUri(uri, allowedSources.value) : null
+})
+const supportedSourceLabels = computed(() => allowedSources.value.map((host) => (
+  host === 'substack.com' ? 'substack.com + subdomains' : host
+)))
 
 function loadTransactions(): TxEvidence[] {
   try {
@@ -215,31 +276,127 @@ function statusClass(status: string) {
   return `status status-${status.toLowerCase()}`
 }
 
+function challengeFor(submission: Submission) {
+  return submission.latest_challenge_id ? challenges.value[submission.latest_challenge_id] : undefined
+}
+
+function isCreator(submission: Submission) {
+  return Boolean(walletAddress.value) && submission.creator.toLowerCase() === walletAddress.value.toLowerCase()
+}
+
+function bountyForSubmission(submission: Submission) {
+  return bounties.value.find((bounty) => bounty.id === submission.bounty_id)
+}
+
 function canEvaluate(submission: Submission) {
   if (!selectedBounty.value) return false
   return ['PENDING', 'INCONCLUSIVE'].includes(submission.status)
     && submission.attempt_count < 3
-    && Date.now() / 1000 <= selectedBounty.value.evaluation_deadline
+    && nowSeconds.value <= selectedBounty.value.evaluation_deadline
     && ['OPEN', 'LOCKED'].includes(selectedBounty.value.status)
+    && (
+      !selectedBounty.value.has_provisional_winner
+      || selectedBounty.value.provisional_submission_id === submission.id
+    )
 }
 
 function evaluationEvidence(submissionId: number) {
   return transactions.value.find((entry) => entry.action === 'EVALUATE' && entry.entityId === submissionId)
 }
 
+function claimEvidence(submissionId: number) {
+  return transactions.value.find((entry) => entry.action === 'CLAIM' && entry.entityId === submissionId)
+}
+
 function settlementLabel(submission: Submission) {
+  if (submission.status === 'APPROVED_PENDING') {
+    return `Consensus approved this submission, but no creator reward has moved. Challenge window: ${formatCountdown(submission.challenge_deadline, nowSeconds.value)}.`
+  }
   if (submission.status !== 'APPROVED') return ''
-  const evidence = evaluationEvidence(submission.id)
-  if (!evidence) return 'Approved on-chain. This browser has no transaction evidence for payout confirmation.'
+  const evidence = claimEvidence(submission.id)
+  if (!evidence) return 'The submission state is APPROVED. This browser has no local claim transaction evidence; verify finalization and the recipient balance independently.'
   const classification = classifyTransaction({
     statusName: evidence.statusName,
     resultName: evidence.resultName,
     txExecutionResultName: evidence.executionResultName,
   })
-  if (classification.phase === 'FINALIZED') return 'Evaluation finalized successfully; contract execution returned normally. Confirm the recipient balance delta before describing the reward as paid.'
-  if (classification.phase === 'ACCEPTED') return 'Consensus majority agreed and execution returned successfully. The transaction is accepted but not final.'
-  if (classification.phase === 'FAILED') return `The recorded evaluation transaction failed: ${classification.failureReason ?? 'unknown failure'}. Settlement is not confirmed.`
-  return 'Evaluation submitted. Settlement is not confirmed.'
+  if (classification.phase === 'FINALIZED') return 'Reward claim finalized successfully. Confirm the creator balance delta before describing the reward as paid.'
+  if (classification.phase === 'ACCEPTED') return 'Reward claim reached consensus but is not finalized yet.'
+  if (classification.phase === 'FAILED') return `The recorded claim transaction failed: ${classification.failureReason ?? 'unknown failure'}.`
+  return 'Reward claim was submitted and remains unconfirmed.'
+}
+
+function sourceStateLabel(submission: Submission) {
+  if (submission.reason_code === 'CLAIM_TAG_MISSING') return 'The required wallet claim tag is absent from the current rendered source.'
+  if (submission.reason_code === 'DIGEST_MISMATCH') return 'The current rendered source no longer matches the submitted digest.'
+  return ''
+}
+
+function canChallenge(submission: Submission) {
+  return submission.status === 'APPROVED_PENDING'
+    && submission.active_challenge_id === 0
+    && nowSeconds.value < submission.challenge_deadline
+    && (!walletAddress.value || !isCreator(submission))
+}
+
+function canReviewChallenge(challenge: Challenge) {
+  return challenge.status === 'OPEN'
+    && nowSeconds.value < challenge.review_deadline
+    && challenge.attempt_count < 3
+    && ['', 'INCONCLUSIVE'].includes(challenge.proposed_outcome)
+}
+
+function canFinalizeChallenge(challenge: Challenge) {
+  return challenge.status === 'OPEN' && ['UPHOLD', 'DISMISS'].includes(challenge.proposed_outcome)
+}
+
+function canTimeoutChallenge(challenge: Challenge) {
+  return challenge.status === 'OPEN'
+    && ['', 'INCONCLUSIVE'].includes(challenge.proposed_outcome)
+    && (challenge.attempt_count >= 3 || nowSeconds.value >= challenge.review_deadline)
+}
+
+function canReviewSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  return Boolean(challenge && canReviewChallenge(challenge))
+}
+
+function canFinalizeSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  return Boolean(challenge && canFinalizeChallenge(challenge))
+}
+
+function canTimeoutSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  return Boolean(challenge && canTimeoutChallenge(challenge))
+}
+
+function reviewSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  if (challenge) void reviewChallenge(challenge)
+}
+
+function finalizeSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  if (challenge) void finalizeChallenge(challenge)
+}
+
+function timeoutSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  if (challenge) void timeoutChallenge(challenge)
+}
+
+function canClaimReward(submission: Submission) {
+  const bounty = bountyForSubmission(submission)
+  return Boolean(bounty)
+    && isCreator(submission)
+    && submission.status === 'APPROVED_PENDING'
+    && nowSeconds.value >= submission.challenge_deadline
+    && submission.active_challenge_id === 0
+    && !submission.reward_claimed
+    && bounty?.status === 'LOCKED'
+    && bounty.has_provisional_winner
+    && bounty.provisional_submission_id === submission.id
 }
 
 function externalAccount(address: Address) {
@@ -323,6 +480,81 @@ async function readAllBounties() {
   }
 }
 
+async function loadAllowedSources() {
+  if (!contractConfigured.value) return
+  try {
+    allowedSources.value = await readClient.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: 'get_allowed_sources',
+      args: [],
+    }) as string[]
+  } catch (error: any) {
+    allowedSources.value = []
+    showNotice(`Could not load the contract source policy: ${contractErrorMessage(error)}`, 'error')
+  }
+}
+
+async function loadClaimTag() {
+  const requestId = ++claimTagRequestId
+  const bountyId = selectedBounty.value?.id
+  const creatorAddress = walletAddress.value
+  claimTag.value = ''
+  if (!contractConfigured.value || !creatorAddress || bountyId === undefined) {
+    claimTagLoading.value = false
+    return
+  }
+  claimTagLoading.value = true
+  try {
+    const loadedTag = await readClient.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: 'get_claim_tag',
+      args: [bountyId, creatorAddress],
+    }) as string
+    if (
+      requestId !== claimTagRequestId
+      || walletAddress.value !== creatorAddress
+      || selectedBounty.value?.id !== bountyId
+    ) return
+    claimTag.value = loadedTag
+  } catch (error: any) {
+    if (requestId === claimTagRequestId) {
+      showNotice(`Could not derive the claim tag: ${contractErrorMessage(error)}`, 'error')
+    }
+  } finally {
+    if (requestId === claimTagRequestId) claimTagLoading.value = false
+  }
+}
+
+async function copyClaimTag() {
+  if (!claimTag.value) return
+  try {
+    await navigator.clipboard.writeText(claimTag.value)
+    showNotice('Claim tag copied.', 'success')
+  } catch {
+    showNotice('Clipboard access failed. Select the claim tag manually.', 'error')
+  }
+}
+
+async function loadChallengeDetails(records: Submission[]) {
+  const ids = [...new Set(records.map((submission) => submission.latest_challenge_id).filter((id) => id > 0))]
+  const loaded = await Promise.all(ids.map(async (id) => {
+    try {
+      const challenge = await readClient.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: 'get_challenge',
+        args: [id],
+      }) as Challenge
+      return [id, challenge] as const
+    } catch {
+      return null
+    }
+  }))
+  const loadedChallenges = Object.fromEntries(
+    loaded.filter((entry): entry is readonly [number, Challenge] => entry !== null),
+  )
+  challenges.value = { ...challenges.value, ...loadedChallenges }
+}
+
 async function loadBounties() {
   if (!contractConfigured.value) {
     showNotice('Set VITE_CONTRACT_ADDRESS to a deployed ContentBounty v2 contract.', 'error')
@@ -345,12 +577,14 @@ async function loadBounties() {
 async function selectBounty(bounty: Bounty) {
   selectedBounty.value = bounty
   submitForm.value = { evidenceUri: '' }
+  challengeTarget.value = null
   await loadSubmissions(bounty.id)
 }
 
 async function loadSubmissions(bountyId: number) {
   try {
     submissions.value = await readSubmissionsForBounty(bountyId)
+    await loadChallengeDetails(submissions.value)
   } catch (error: any) {
     submissions.value = []
     showNotice(`Could not load submissions: ${error?.message ?? String(error)}`, 'error')
@@ -386,11 +620,28 @@ async function openActivity() {
       if (page.length < 50) break
     }
     activitySubmissions.value = result
+    await loadChallengeDetails(result)
   } catch (error: any) {
     showNotice(`Could not load wallet activity: ${error?.message ?? String(error)}`, 'error')
   } finally {
     actionBusy.value = ''
   }
+}
+
+async function openBountiesView() {
+  activeView.value = 'bounties'
+  await refreshSelected()
+}
+
+async function openSubmissionBounty(submission: Submission) {
+  activeView.value = 'bounties'
+  await loadBounties()
+  const bounty = bounties.value.find((item) => item.id === submission.bounty_id)
+  if (!bounty) {
+    showNotice(`Bounty #${submission.bounty_id} is not currently loaded. Refresh the marketplace first.`, 'error')
+    return
+  }
+  await selectBounty(bounty)
 }
 
 async function runWrite(
@@ -545,8 +796,10 @@ async function submitEvidence() {
   if (!selectedBounty.value) return
   actionBusy.value = 'submit'
   try {
-    const uri = submitForm.value.evidenceUri.trim()
-    if (!uri.startsWith('https://')) throw new Error('Evidence must use an HTTPS URI.')
+    const uri = submitForm.value.evidenceUri
+    if (!claimTag.value) throw new Error('Connect the submitting wallet and load its claim tag before publishing or submitting.')
+    const uriError = validateSourceUri(uri, allowedSources.value)
+    if (uriError) throw new Error(uriError)
     const hash = await runWrite(
       'SUBMIT',
       `Submit evidence to bounty #${selectedBounty.value.id}`,
@@ -559,7 +812,7 @@ async function submitEvidence() {
       await refreshSelected()
     }
   } catch (error: any) {
-    showNotice(error?.message ?? String(error), 'error')
+    showNotice(contractErrorMessage(error), 'error')
   } finally {
     actionBusy.value = ''
   }
@@ -577,7 +830,149 @@ async function evaluateSubmission(submission: Submission) {
     )
     await refreshSelected()
   } catch (error: any) {
-    showNotice(error?.message ?? String(error), 'error')
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function openChallengeModal(submission: Submission) {
+  if (!walletAddress.value) {
+    await connectWallet()
+    if (!walletAddress.value) return
+  }
+  if (isCreator(submission)) {
+    showNotice('The submission creator cannot challenge their own submission.', 'error')
+    return
+  }
+  actionBusy.value = `challenge-prepare-${submission.id}`
+  try {
+    const rawBond = await readClient.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: 'get_challenge_bond',
+      args: [submission.id],
+    }) as number | string | bigint
+    challengeBond.value = BigInt(rawBond)
+    challengeTarget.value = submission
+    challengeForm.value = {
+      reasonCode: 'RIGHTS_OR_PLAGIARISM',
+      evidenceUri: '',
+      confirmed: false,
+    }
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+function closeChallengeModal() {
+  challengeTarget.value = null
+  challengeBond.value = 0n
+  challengeForm.value.confirmed = false
+}
+
+async function submitChallenge() {
+  const submission = challengeTarget.value
+  if (!submission) return
+  actionBusy.value = `challenge-${submission.id}`
+  try {
+    if (!challengeForm.value.confirmed) throw new Error('Confirm the challenge bond routing before continuing.')
+    const uri = challengeForm.value.evidenceUri
+    const uriError = validateSourceUri(uri, allowedSources.value)
+    if (uriError) throw new Error(uriError)
+    await runWrite(
+      'CHALLENGE',
+      `Challenge submission #${submission.id}`,
+      submission.id,
+      'challenge_submission',
+      [submission.id, challengeForm.value.reasonCode, uri],
+      challengeBond.value,
+    )
+    closeChallengeModal()
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function reviewChallenge(challenge: Challenge) {
+  actionBusy.value = `review-challenge-${challenge.id}`
+  try {
+    const hash = await runWrite(
+      'REVIEW_CHALLENGE',
+      `Review challenge #${challenge.id}`,
+      challenge.id,
+      'review_challenge',
+      [challenge.id],
+    )
+    if (!hash) return
+    await refreshSelected()
+    const updated = challenges.value[challenge.id]
+    if (updated?.proposed_outcome === 'INCONCLUSIVE') {
+      showNotice(
+        `Challenge review was inconclusive (attempt ${updated.attempt_count} of 3). Retry while eligible, or use timeout when its attempt or deadline condition is met.`,
+        'info',
+      )
+    }
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function finalizeChallenge(challenge: Challenge) {
+  actionBusy.value = `finalize-challenge-${challenge.id}`
+  try {
+    await runWrite(
+      'FINALIZE_CHALLENGE',
+      `Finalize challenge #${challenge.id}`,
+      challenge.id,
+      'finalize_challenge',
+      [challenge.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function timeoutChallenge(challenge: Challenge) {
+  actionBusy.value = `timeout-challenge-${challenge.id}`
+  try {
+    await runWrite(
+      'TIMEOUT_CHALLENGE',
+      `Time out challenge #${challenge.id}`,
+      challenge.id,
+      'timeout_challenge',
+      [challenge.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function claimReward(submission: Submission) {
+  actionBusy.value = `claim-${submission.id}`
+  try {
+    await runWrite(
+      'CLAIM',
+      `Claim reward for submission #${submission.id}`,
+      submission.id,
+      'claim_reward',
+      [submission.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
   } finally {
     actionBusy.value = ''
   }
@@ -627,7 +1022,9 @@ function isPoster(bounty: Bounty) {
 }
 
 function canExpire(bounty: Bounty) {
-  return ['OPEN', 'LOCKED'].includes(bounty.status) && Date.now() / 1000 > bounty.evaluation_deadline
+  return ['OPEN', 'LOCKED'].includes(bounty.status)
+    && nowSeconds.value > bounty.evaluation_deadline
+    && !bounty.has_provisional_winner
 }
 
 function onAccountsChanged(accounts: string[]) {
@@ -643,22 +1040,37 @@ onMounted(async () => {
   provider.value?.on?.('accountsChanged', onAccountsChanged)
   provider.value?.on?.('chainChanged', onChainChanged)
   await restoreWallet()
+  await loadAllowedSources()
   await loadBounties()
+  clockHandle = window.setInterval(() => {
+    nowSeconds.value = Math.floor(Date.now() / 1000)
+  }, 1000)
   for (const entry of transactions.value.filter((item) => !['FINALIZED', 'FAILED'].includes(item.phase))) {
     void syncTransaction(entry)
   }
+})
+
+watch([walletAddress, () => selectedBounty.value?.id], () => {
+  void loadClaimTag()
+})
+
+onUnmounted(() => {
+  claimTagRequestId += 1
+  if (clockHandle !== undefined) window.clearInterval(clockHandle)
+  provider.value?.removeListener?.('accountsChanged', onAccountsChanged)
+  provider.value?.removeListener?.('chainChanged', onChainChanged)
 })
 </script>
 
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <button class="brand" @click="activeView = 'bounties'">
+      <button class="brand" @click="openBountiesView">
         <span class="brand-mark">CB</span>
         <span><strong>ContentBounty</strong><small>verifiable creative work</small></span>
       </button>
       <nav>
-        <button :class="{ active: activeView === 'bounties' }" @click="activeView = 'bounties'">Bounties</button>
+        <button :class="{ active: activeView === 'bounties' }" @click="openBountiesView">Bounties</button>
         <button :class="{ active: activeView === 'post' }" @click="activeView = 'post'">Post</button>
         <button :class="{ active: activeView === 'activity' }" @click="openActivity">My activity</button>
         <button :class="{ active: activeView === 'transactions' }" @click="activeView = 'transactions'">Transactions</button>
@@ -741,10 +1153,19 @@ onMounted(async () => {
               <button v-if="canExpire(selectedBounty)" class="button secondary" :disabled="Boolean(actionBusy)" @click="expireBounty(selectedBounty)">Expire permissionlessly</button>
             </div>
 
-            <form v-if="['OPEN', 'LOCKED'].includes(selectedBounty.status) && Date.now() / 1000 <= selectedBounty.submission_deadline" class="evidence-form" @submit.prevent="submitEvidence">
-              <div><p class="label">Submit canonical evidence</p><p class="hint">Publish UTF-8 raw text at a stable, preferably content-addressed HTTPS URL. After CRLF/CR conversion and outer-whitespace trimming, it must contain 1–16,000 characters. Submission consensus renders it with GenLayer, normalizes it, and stores the SHA-256—do not guess a browser or HTTP-body digest. Prepare the exact text with <code>python scripts/prepare_evidence.py --uri … --file evidence.txt</code>.</p></div>
-              <label>Raw-text evidence HTTPS URI<input v-model="submitForm.evidenceUri" type="url" maxlength="512" required placeholder="https://…/ipfs/…/evidence.txt" /></label>
-              <button class="button primary" :disabled="Boolean(actionBusy)">{{ actionBusy === 'submit' ? 'Rendering and submitting…' : 'Prepare commitment and submit' }}</button>
+            <form v-if="['OPEN', 'LOCKED'].includes(selectedBounty.status) && nowSeconds <= selectedBounty.submission_deadline" class="evidence-form" @submit.prevent="submitEvidence">
+              <div><p class="label">Publish with your wallet claim tag</p><p class="hint">This tag is specific to the selected bounty, connected wallet, chain, and contract version. Put the exact token in the public source before submitting its URL.</p></div>
+              <div v-if="!connected" class="claim-tag-callout"><strong>Connect the wallet that will submit.</strong><span>The contract derives a different tag for every creator address.</span><button type="button" class="button secondary" @click="connectWallet">Connect wallet</button></div>
+              <div v-else class="claim-tag-callout">
+                <span class="label">Required token</span>
+                <div class="claim-tag-row"><code>{{ claimTagLoading ? 'Loading…' : claimTag || 'Unavailable' }}</code><button type="button" class="button secondary compact" :disabled="!claimTag" @click="copyClaimTag">Copy</button></div>
+                <strong>Publish first, submit second.</strong>
+                <span>On immutable or non-editable platforms, an omitted tag cannot be repaired in this version. Do not publish until this token is included; there is no post-publication or same-submission repair path.</span>
+              </div>
+              <div><p class="label">Supported publishing surfaces</p><p class="source-list">{{ supportedSourceLabels.join(' · ') || 'Loading contract allowlist…' }}</p><p class="hint">The allowlist constrains renderable sources; it is not proof of authorship or legal ownership.</p></div>
+              <label>Source HTTPS URI<input v-model="submitForm.evidenceUri" type="url" maxlength="512" required placeholder="https://github.com/…" /></label>
+              <p v-if="submitUriError" class="field-error">{{ submitUriError }}</p>
+              <button class="button primary" :disabled="Boolean(actionBusy) || !claimTag || Boolean(submitUriError)">{{ actionBusy === 'submit' ? 'Rendering and submitting…' : 'Submit source for consensus render' }}</button>
             </form>
 
             <div class="submissions">
@@ -753,6 +1174,7 @@ onMounted(async () => {
               <article v-for="submission in submissions" :key="submission.id" class="submission-card">
                 <div class="submission-head"><div><span class="mono">Submission #{{ submission.id }}</span><a :href="submission.evidence_uri" target="_blank" rel="noreferrer">Open evidence ↗</a></div><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
                 <p class="digest mono">sha256:{{ submission.evidence_sha256 }}</p>
+                <p v-if="submission.claim_tag" class="digest mono">claim:{{ submission.claim_tag }} · {{ submission.claim_tag_version }}</p>
                 <dl class="result-grid">
                   <div><dt>Creator</dt><dd>{{ shortAddress(submission.creator) }}</dd></div>
                   <div><dt>Attempts</dt><dd>{{ submission.attempt_count }} / 3</dd></div>
@@ -762,8 +1184,40 @@ onMounted(async () => {
                   <div><dt>Reason</dt><dd>{{ submission.reason_code || '—' }}</dd></div>
                 </dl>
                 <p v-if="submission.feedback" class="feedback">{{ submission.feedback }}</p>
+                <p v-if="sourceStateLabel(submission)" class="field-error">{{ sourceStateLabel(submission) }}</p>
                 <p v-if="settlementLabel(submission)" class="settlement-note">{{ settlementLabel(submission) }}</p>
-                <button v-if="canEvaluate(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="evaluateSubmission(submission)">{{ actionBusy === `evaluate-${submission.id}` ? 'Evaluating…' : submission.status === 'INCONCLUSIVE' ? 'Retry evaluation' : 'Evaluate submission' }}</button>
+                <div v-if="submission.status === 'APPROVED_PENDING'" class="pending-panel">
+                  <dl class="result-grid compact-grid">
+                    <div><dt>Approved at</dt><dd>{{ formatDate(submission.approved_at) }}</dd></div>
+                    <div><dt>Challenge deadline</dt><dd>{{ formatDate(submission.challenge_deadline) }}</dd></div>
+                    <div><dt>Local countdown</dt><dd>{{ formatCountdown(submission.challenge_deadline, nowSeconds) }}</dd></div>
+                  </dl>
+                  <p class="hint">Countdown is informational. The GenVM transaction timestamp is authoritative.</p>
+                </div>
+                <div v-if="challengeFor(submission)" class="challenge-panel">
+                  <div class="submission-head"><div><p class="label">Challenge #{{ challengeFor(submission)?.id }}</p><span :class="statusClass(challengeFor(submission)?.status || 'OPEN')">{{ challengeFor(submission)?.status }}</span></div><a :href="challengeFor(submission)?.evidence_uri" target="_blank" rel="noreferrer">Open evidence ↗</a></div>
+                  <dl class="result-grid">
+                    <div><dt>Challenger</dt><dd>{{ shortAddress(challengeFor(submission)?.challenger || '') }}</dd></div>
+                    <div><dt>Reason</dt><dd>{{ challengeFor(submission)?.reason_code }}</dd></div>
+                    <div><dt>Bond</dt><dd>{{ formatWei(challengeFor(submission)?.bond || 0, 18) }} GEN</dd></div>
+                    <div><dt>Evidence digest</dt><dd class="mono">{{ challengeFor(submission)?.evidence_sha256 }}</dd></div>
+                    <div><dt>Attempts</dt><dd>{{ challengeFor(submission)?.attempt_count }} / 3</dd></div>
+                    <div><dt>Review deadline</dt><dd>{{ formatDate(challengeFor(submission)?.review_deadline || 0) }}</dd></div>
+                    <div><dt>Proposed outcome</dt><dd>{{ challengeFor(submission)?.proposed_outcome || 'NONE' }}</dd></div>
+                    <div><dt>Final outcome</dt><dd>{{ challengeFor(submission)?.status === 'OPEN' ? 'PENDING' : challengeFor(submission)?.status }}</dd></div>
+                    <div><dt>Bond disposition</dt><dd>{{ challengeFor(submission)?.bond_disposition || 'ESCROWED' }}</dd></div>
+                  </dl>
+                  <p class="digest mono">evidence: <a :href="challengeFor(submission)?.evidence_uri" target="_blank" rel="noreferrer">{{ challengeFor(submission)?.evidence_uri }}</a></p>
+                  <p v-if="challengeFor(submission)?.proposed_feedback" class="feedback">{{ challengeFor(submission)?.proposed_error_class }} {{ challengeFor(submission)?.proposed_feedback }}</p>
+                </div>
+                <div class="submission-actions">
+                  <button v-if="canEvaluate(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="evaluateSubmission(submission)">{{ actionBusy === `evaluate-${submission.id}` ? 'Evaluating…' : submission.status === 'INCONCLUSIVE' ? 'Retry evaluation' : 'Evaluate submission' }}</button>
+                  <button v-if="canChallenge(submission)" class="button danger" :disabled="Boolean(actionBusy)" @click="openChallengeModal(submission)">Challenge</button>
+                  <button v-if="canReviewSubmissionChallenge(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="reviewSubmissionChallenge(submission)">Review challenge</button>
+                  <button v-if="canFinalizeSubmissionChallenge(submission)" class="button primary" :disabled="Boolean(actionBusy)" @click="finalizeSubmissionChallenge(submission)">Finalize challenge</button>
+                  <button v-if="canTimeoutSubmissionChallenge(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="timeoutSubmissionChallenge(submission)">Timeout challenge</button>
+                  <button v-if="canClaimReward(submission)" class="button primary" :disabled="Boolean(actionBusy)" @click="claimReward(submission)">{{ actionBusy === `claim-${submission.id}` ? 'Claiming…' : 'Claim reward' }}</button>
+                </div>
               </article>
             </div>
           </article>
@@ -804,9 +1258,18 @@ onMounted(async () => {
         <div v-else-if="!mySubmissions.length" class="empty-card"><h3>No submissions for {{ shortAddress(walletAddress) }}</h3><p>This address has no submissions in the currently loaded v2 bounties.</p></div>
         <div v-else class="activity-grid">
           <article v-for="submission in mySubmissions" :key="submission.id" class="submission-card">
-            <div class="submission-head"><span class="mono">Bounty #{{ submission.bounty_id }} · Submission #{{ submission.id }}</span><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
+            <div class="submission-head"><button class="text-button" type="button" @click="openSubmissionBounty(submission)">Bounty #{{ submission.bounty_id }} · Submission #{{ submission.id }}</button><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
             <a :href="submission.evidence_uri" target="_blank" rel="noreferrer">{{ submission.evidence_uri }}</a>
             <p class="feedback">{{ submission.feedback || 'Not evaluated yet.' }}</p>
+            <div v-if="submission.status === 'APPROVED_PENDING'" class="pending-panel">
+              <dl class="result-grid compact-grid">
+                <div><dt>Challenge deadline</dt><dd>{{ formatDate(submission.challenge_deadline) }}</dd></div>
+                <div><dt>Local countdown</dt><dd>{{ formatCountdown(submission.challenge_deadline, nowSeconds) }}</dd></div>
+                <div><dt>Challenge</dt><dd>{{ challengeFor(submission) ? `#${challengeFor(submission)?.id} ${challengeFor(submission)?.status}` : 'None recorded' }}</dd></div>
+              </dl>
+              <p class="hint">Countdown is informational. Open the bounty for challenge, review, timeout, and claim actions.</p>
+            </div>
+            <button class="button secondary compact" type="button" @click="openSubmissionBounty(submission)">Open bounty actions</button>
           </article>
         </div>
       </section>
@@ -827,6 +1290,26 @@ onMounted(async () => {
         </div>
       </section>
     </main>
+
+    <div v-if="challengeTarget" class="modal-backdrop" @click.self="closeChallengeModal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="challenge-title">
+        <div class="section-heading compact-heading">
+          <div><p class="eyebrow">Pre-payout challenge</p><h2 id="challenge-title">Challenge submission #{{ challengeTarget.id }}</h2></div>
+          <button class="text-button" type="button" @click="closeChallengeModal">Close</button>
+        </div>
+        <p class="section-copy">The evidence is reviewed by a second consensus round. Review proposes an outcome; deterministic finalization handles the bond and submission state.</p>
+        <label>Reason
+          <select v-model="challengeForm.reasonCode">
+            <option v-for="reason in CHALLENGE_REASONS" :key="reason.value" :value="reason.value">{{ reason.label }}</option>
+          </select>
+        </label>
+        <label>HTTPS evidence URI<input v-model="challengeForm.evidenceUri" type="url" maxlength="512" placeholder="https://gist.github.com/…" /></label>
+        <p v-if="challengeForm.evidenceUri && validateSourceUri(challengeForm.evidenceUri, allowedSources)" class="field-error">{{ validateSourceUri(challengeForm.evidenceUri, allowedSources) }}</p>
+        <div class="bond-callout"><strong>Exact bond: {{ formatWei(challengeBond, 18) }} GEN</strong><span>Dismissed challenges route the bond to the submission creator. Upheld and timed-out challenges return it to the challenger. The contract requires exact payment.</span></div>
+        <label class="checkbox-label"><input v-model="challengeForm.confirmed" type="checkbox" /> I understand the bond routing and confirm this evidence is submitted in good faith.</label>
+        <div class="modal-actions"><button class="button secondary" type="button" @click="closeChallengeModal">Cancel</button><button class="button primary" type="button" :disabled="Boolean(actionBusy) || !challengeForm.confirmed || !challengeForm.evidenceUri || Boolean(validateSourceUri(challengeForm.evidenceUri, allowedSources))" @click="submitChallenge">Submit challenge</button></div>
+      </section>
+    </div>
 
     <footer>
       <div><strong>ContentBounty v2</strong><span>{{ NETWORK_LABEL }} ({{ NETWORK_SELECTOR }}) · {{ RPC_URL }}</span></div>

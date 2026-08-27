@@ -1,8 +1,13 @@
 # Bradbury live evidence worker
 
+> Historical v2.1.1 fixture only. The current v2.2 contract rejects
+> `workers.dev` because it is outside the deterministic source-host allowlist.
+> Do not use these routes for a v2.2 deployment or proof run. A future v2.2
+> proof must publish claim-tagged fixtures on an allowed source family.
+
 This Cloudflare Worker serves the three raw-text evidence routes required by
-the persistent Bradbury runner and stores mutation state in a SQLite-backed
-Durable Object.
+the historical v2.1.1 persistent Bradbury runner and stores mutation state in a
+SQLite-backed Durable Object.
 
 It does not contain a deployed URL, account identifier, credential, or mutation
 token. Deployment requires an authenticated Cloudflare account with Workers,
@@ -23,7 +28,10 @@ to proof artifacts. The runner's local `LIVE_MUTATION_WEBHOOK_URL` may contain
 the token query parameter and must remain only in the ignored mode-600 root
 `.env`.
 
-## Required external deployment action
+## Historical external deployment procedure
+
+The steps below reproduce the v2.1.1 fixture service only. They are retained for
+historical recovery and must not be used as the v2.2 proof-regeneration path.
 
 From this directory, authenticate the Cloudflare account that will own the
 public worker:
@@ -58,7 +66,8 @@ and 1,092 characters. Approval output must contain both
 `CONTENT BOUNTY LIVE PASS` and `https://docs.genlayer.com/`. Health must report
 `mutableState` as `initial`.
 
-Using a local editor that does not echo values, set the four root `.env`
+For historical v2.1.1 recovery only, use a local editor that does not echo
+values to set the four root `.env`
 variables to the actual deployed routes. The mutation webhook value is the
 actual `/mutate` URL with its secret `token` query parameter. Keep `.env` mode
 600 and Git-ignored. Only after all four HTTPS checks pass should the root live

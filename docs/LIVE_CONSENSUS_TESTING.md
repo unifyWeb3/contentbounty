@@ -1,14 +1,15 @@
-# Live consensus verification
+# Historical live consensus verification
 
-This suite deploys the current contract source and exercises real leader plus
-validator consensus. Persistent settlement proof is restricted to
-`testnetBradbury`. Studionet is available only as an explicitly named
-smoke/demo mode: its balances and transfers are simulated and cannot satisfy
-the payout-proof gate. The authoritative Bradbury v2.1.1 deployment is
-finalized at `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`, and the persistent
-proof is complete. The suite is
-intentionally excluded from CI because it spends funds, calls external
-evidence services, and creates persistent network state.
+This document records the completed v2.1.1 Bradbury proof. The authoritative
+historical deployment is finalized at
+`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` and its persistent proof is
+complete.
+
+The current repository contract is v2.2 and is not deployed. The existing live
+runner, source fixtures, proof schema, address constants, and payout assertions
+still describe v2.1.1 immediate settlement. They must not be used to claim v2.2
+deployment or challenge-window coverage. No v2.2 deployment or proof
+regeneration has been performed.
 
 `AUDIT_REPORT.md` is retained unchanged as an archival audit of historical
 commit `a09fe6a`; it does not describe the current deployed v2.1.1 contract or
@@ -57,7 +58,46 @@ npm run export:live-proof -- --check
 npm run verify:live-proof:online
 ```
 
-## Required setup
+`verify:live-proof` validates the historical public artifact against its
+recorded deployed commit and SHA-256. It intentionally does not claim that the
+current working-tree contract matches that deployment. `export:live-proof
+-- --check` additionally needs the untracked raw artifact at the documented
+path.
+
+## Required v2.2 proof-run updates
+
+Before any future deployment or live proof run, update the live tooling as one
+coherent change:
+
+- deploy the current source and replace the pinned address, deployment
+  transaction, source commit, and source SHA-256 only after finalization;
+- publish every submission and challenge evidence URL on a source family
+  allowed by v2.2. The historical `workers.dev` fixture URLs are no longer valid
+  submission URLs;
+- create the bounty first, call `get_claim_tag`, and insert the deployment- and
+  bounty-specific tag into each source before `submit_content`. Immutable
+  sources must be published only after the tag is known;
+- record `APPROVED_PENDING` after evaluation and prove that evaluation emitted
+  no creator reward;
+- wait for the authoritative 48-hour challenge deadline, then execute and
+  finalize a separate `claim_reward` transaction before measuring the creator
+  balance delta;
+- add live challenge scenarios for at least one finalized outcome and prove that
+  `review_challenge` itself moves no funds;
+- revise the proof schema, exporter, online verifier, scenario recovery,
+  deadline classification, transaction labels, fixtures, and tests for the
+  separate evaluation, challenge, and claim phases;
+- update the frontend deployment configuration and bundle verifier only after
+  the new address has its own source-bound proof.
+
+Until those changes are complete, `npm run test:live` is a historical v2.1.1
+runner and is not a valid v2.2 verification command.
+
+## Historical v2.1.1 runner setup
+
+The remainder of this document describes how the archived v2.1.1 proof was
+produced. Its evidence URLs and immediate-payout expectations are intentionally
+not compatible with v2.2.
 
 - a reachable selected network; persistent mode requires `testnetBradbury`;
 - funded deployer and creator accounts;
