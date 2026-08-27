@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "contentbounty-bradbury-v22-deployment-proof-v1",
+  "proofCapturedAt": "2026-08-27T14:17:26.056Z",
+  "status": "DEPLOYED_FINALIZED_LIVE_SCENARIO_PENDING",
+  "proofComplete": false,
+  "note": "v2.2 deployment finalized; live APPROVED_PENDING -> challenge window -> claim_reward scenario in progress (requires 48h challenge window, not yet claimable). This proof documents fresh deployment and verifies delayed settlement via direct tests and live posting.",
+  "network": {
+    "selector": "testnetBradbury",
+    "chainId": 4221,
+    "persistent": true,
+    "explorer": "https://explorer-bradbury.genlayer.com"
+  },
+  "contract": {
+    "address": "0x7F73e10059D0C669c2d2fe3FA716312587aC87c8",
+    "explorer": "https://explorer-bradbury.genlayer.com//address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8",
+    "sourceCommit": "2e35764e732ebdd85ae9bf646abe9beaef975be2",
+    "sourceSha256": "b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a",
+    "deployedSha256": "b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a",
+    "verified": true,
+    "methods": 19,
+    "viewMethods": 9,
+    "writeMethods": 10
+  },
+  "deployment": {
+    "transaction": "0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532",
+    "explorer": "https://explorer-bradbury.genlayer.com//tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532",
+    "lifecycle": {
+      "statusName": "FINALIZED",
+      "resultName": "AGREE",
+      "executionResultName": "FINISHED_WITH_RETURN"
+    },
+    "createdTimestamp": "1787837888",
+    "lastVoteTimestamp": "1787837897",
+    "deployedAt": "2026-08-27T14:10:34.877Z"
+  },
+  "provenance": {
+    "deployedSource": {
+      "commit": "2e35764e732ebdd85ae9bf646abe9beaef975be2",
+      "sha256": "b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a"
+    },
+    "runner": {
+      "commit": "01113ebd2de1826e0b4f579178d52e478d1b264b",
+      "dirty": false
+    }
+  },
+  "verification": {
+    "lint": "3/3 passed",
+    "check": "19 methods (9 view/10 write)",
+    "directTests": "67 passed (GENVM_PY_STD_SOURCE v0.2.16)",
+    "frontendTests": "97 passed",
+    "build": "462 modules, verified bundle contains new address, historical v0.2 absent",
+    "sourceMatch": true,
+    "allowlist": [
+      "github.com",
+      "raw.githubusercontent.com",
+      "gist.github.com",
+      "mirror.xyz",
+      "hackmd.io",
+      "medium.com",
+      "substack.com"
+    ],
+    "stateMachines": {
+      "bounty": [
+        "OPEN",
+        "LOCKED",
+        "FILLED",
+        "CANCELLED",
+        "EXPIRED"
+      ],
+      "submission": [
+        "PENDING",
+        "APPROVED_PENDING",
+        "APPROVED",
+        "REJECTED",
+        "INCONCLUSIVE",
+        "SUPERSEDED"
+      ],
+      "challenge": [
+        "OPEN",
+        "UPHELD",
+        "DISMISSED",
+        "TIMED_OUT"
+      ]
+    },
+    "claimTag": "cb- + 20 hex via Keccak256 domain-separated payload, case-insensitive token boundaries",
+    "challengeWindow": "172800s, review timeout 172800s, max 3 attempts, bond 5% min 0.0001 GEN",
+    "rewardInvariant": "claim_reward() ONLY releases creator reward, evaluate/review/finalize/timeout must not"
+  },
+  "liveScenario": {
+    "status": "POSTING_IN_PROGRESS",
+    "bountyId": null,
+    "submissionId": null,
+    "evidenceUri": "https://raw.githubusercontent.com/unifyWeb3/contentbounty/main/tests/fixtures/live/v22-live-evidence.txt (pending commit after claim tag derived)",
+    "note": "Live scenario requires: post bounty -> get_claim_tag -> publish claim-tagged evidence on allowed host -> submit -> evaluate -> APPROVED_PENDING (bounty LOCKED, no payout) -> 48h challenge window -> claim_reward. Posting transaction 0xe9b117eb2cb49cf52eb8000d21dc954732a61ee66c9aea782062029222a91e4b in progress; evaluation will verify delayed settlement."
+  },
+  "historical": {
+    "v2_1_1_address": "0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04",
+    "v2_1_1_proof": "docs/proofs/bradbury-persistent-proof-v1.json (archived, not compatible with v2.2 storage)",
+    "note": "v2.1.1 proof remains for historical reference; v2.2 requires fresh deployment and new proof due to storage breaking changes"
+  }
+}
