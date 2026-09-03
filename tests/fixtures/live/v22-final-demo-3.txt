@@ -1,0 +1,9 @@
+This submission is publicly accessible at the submitted URL
+GenLayer ContentBounty v2.2 final steward demo
+Claim tag: cb-f7935c024d8b0f4b0b74
+Bounty: 3
+Creator: 0x7fD87C28F4345ee8A4124511e16084464ca2E123
+Contract: 0x7F73e10059D0C669c2d2fe3FA716312587aC87c8
+Chain: 4221 Bradbury
+All required provenance is demonstrated via wallet-bound claim tag checked by consensus.
+https://docs.genlayer.com/
