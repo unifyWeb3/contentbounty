@@ -1,0 +1,3 @@
+This article names GenLayer and links https://docs.genlayer.com/.
+Claim tag: cb-5274ca6fd82b2ce4ce9x
+Fake tag test - should be rejected as CLAIM_TAG_MISSING
