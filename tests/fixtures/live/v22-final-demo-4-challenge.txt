@@ -1,0 +1,6 @@
+Challenge evidence for submission 2 bounty 4
+Reason: RIGHTS_OR_PLAGIARISM
+This submission's content is challenged on rights/plagiarism grounds.
+The original public source at https://raw.githubusercontent.com/unifyWeb3/contentbounty/main/tests/fixtures/live/v22-final-demo-4.txt is contested.
+Evidence shows the claim tag does not prove original authorship, and the content may reproduce uncredited material.
+This challenge is submitted before the challenge deadline to test the protocol's appeal path.
