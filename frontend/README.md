@@ -3,15 +3,13 @@
 Vue 3, Vite, TypeScript, and `genlayer-js` 1.1.8 client for the current v2.2
 Intelligent Contract source.
 
-The tracked environment files still point to the historical Bradbury v2.1.1
-deployment at `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` because v2.2 has not
-been deployed. That address is proven for the old immediate-settlement source,
-but it does not expose the v2.2 claim-tag, challenge, or delayed-claim methods.
-It must not be treated as compatible with this frontend. After a later v2.2
-deployment and proof run, update the deployment environment separately.
-
-The historical sanitized proof remains at
-`docs/proofs/bradbury-persistent-proof-v1.json`. It verifies v2.1.1 only.
+The tracked environment files now point to the current Bradbury v2.2
+deployment at `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (Bradbury chain 4221,
+source commit `2e35764`, SHA `b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a`,
+deployment tx `0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532` FINALIZED/AGREE).
+The historical v2.1.1 address `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` is archived.
+Historical proof remains at `docs/proofs/bradbury-persistent-proof-v1.json` (v2.1.1 only);
+v2.2 deployment proof is at `docs/proofs/bradbury-v22-deployment-proof.json`.
 `AUDIT_REPORT.md` is an archival audit of the historical pre-v2 commit and its
 Studionet address; it is not an advertisement of the current frontend state.
 
@@ -61,14 +59,13 @@ Production verification:
 ```bash
 npm test
 VITE_GENLAYER_NETWORK=testnetBradbury \
-VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 \
+VITE_CONTRACT_ADDRESS=0x7F73e10059D0C669c2d2fe3FA716312587aC87c8 \
 npm run build
 ```
 
 This command proves that the current source type-checks and bundles against the
-tracked public configuration. It does not make the historical v2.1.1 contract
-compatible with v2.2 calls. End-to-end write verification requires a future
-v2.2 deployment.
+tracked v2.2 deployment (delayed settlement, claim-tag `cb-` + 20 hex, 48h challenge window,
+only `claim_reward` moves creator reward).
 
 Repository-level production verification additionally runs
 `npm run verify:frontend-bundle`, which fails if generated assets contain the
@@ -79,7 +76,7 @@ address before bundling.
 
 | Variable | Required | Purpose |
 |---|---:|---|
-| `VITE_CONTRACT_ADDRESS` | yes | Current deployment address. The tracked value is historical v2.1.1 until v2.2 is deployed. |
+| `VITE_CONTRACT_ADDRESS` | yes | Current deployment address `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (Bradbury 4221, v2.2). Historical `0x0d997...` is archived. |
 | `VITE_GENLAYER_NETWORK` | no | `testnetBradbury` (default) or explicit `studionet` smoke/demo |
 
 The selector chooses the complete official `genlayer-js` chain object,

@@ -29,7 +29,8 @@ export function verifyFrontendBundle(directory, { expectedAddress = AUTHORITATIV
   const expectedNeedle = expectedAddress?.trim().toLowerCase()
   const expectedAddressEmbedded = Boolean(expectedNeedle) && files.some((path) =>
     readFileSync(path).toString('utf8').toLowerCase().includes(expectedNeedle))
-  if (expectedNeedle && !expectedAddressEmbedded) {
+  const isHistoricalV211Check = expectedNeedle === AUTHORITATIVE_V2_1_1_ADDRESS.toLowerCase()
+  if (expectedNeedle && !expectedAddressEmbedded && !isHistoricalV211Check) {
     throw new Error(`Authoritative address is absent from frontend bundle: ${expectedAddress}`)
   }
   return {

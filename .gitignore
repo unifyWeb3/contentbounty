@@ -7,3 +7,5 @@ __pycache__/
 dist/
 *.tsbuildinfo
 video/
+.vercel
+.env*.local

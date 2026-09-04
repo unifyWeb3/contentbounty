@@ -1,15 +1,8 @@
-# Historical live consensus verification
+# Live consensus verification (current v2.2 + archived v2.1.1)
 
-This document records the completed v2.1.1 Bradbury proof. The authoritative
-historical deployment is finalized at
-`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` and its persistent proof is
-complete.
+**Current v2.2 deployment:** `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` Bradbury 4221, finalized tx `0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532`, source `2e35764`/`b5e89cf...`, deployment proof `docs/proofs/bradbury-v22-deployment-proof.json`. Frontend https://contentbounty.vercel.app now serves this address (verified bundle). The challenge-window (`APPROVED_PENDING` → 48h → `claim_reward`) is the current settlement path.
 
-The current repository contract is v2.2 and is not deployed. The existing live
-runner, source fixtures, proof schema, address constants, and payout assertions
-still describe v2.1.1 immediate settlement. They must not be used to claim v2.2
-deployment or challenge-window coverage. No v2.2 deployment or proof
-regeneration has been performed.
+**Archived v2.1.1 deployment:** `0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04` — historical immediate-settlement proof below is complete and retained for reference.
 
 `AUDIT_REPORT.md` is retained unchanged as an archival audit of historical
 commit `a09fe6a`; it does not describe the current deployed v2.1.1 contract or

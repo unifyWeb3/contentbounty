@@ -20,23 +20,28 @@ challenge window.
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776ab)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Historical live product
+## Live deployment (current v2.2)
 
-The public app, contract, proof, and fixture below are the deployed v2.1.1
-system. The current v2.2 source in this repository has not been deployed and is
-not runtime-compatible with that address.
+Source commit `2e35764` (SHA `b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a`) is deployed and finalized on **GenLayer Bradbury (chain 4221)** at:
+
+**`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`** — [Explorer](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) — deployment [tx `0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) `FINALIZED/AGREE/FINISHED_WITH_RETURN`. The public app at https://contentbounty.vercel.app now serves this address (verified bundle `docs/proofs/bradbury-v22-deployment-proof.json`).
+
+* Provenance: wallet/bounty/contract/chain-bound claim tag `cb-` + 20 hex (Keccak256) checked by consensus before state is allocated; not legal authorship.
+* Settlement: `evaluate_submission` → `APPROVED_PENDING` (48h challenge window, reward stays escrowed, bounty `LOCKED`) → `claim_reward` only after deadline with no active challenge → `APPROVED` + `FILLED`.
+* Challenge: fixed reason codes, exact bond `max(5% reward, 0.0001 GEN)`, `OPEN → review → UPHELD/DISMISSED/TIMED_OUT`, `active_challenge_id` blocks payout, `timeout_challenge` after 3 inconclusive or 48h.
 
 | Surface | Link |
 |---|---|
-| Historical v2.1.1 product | https://contentbounty.vercel.app |
+| **Current v2.2 product** | https://contentbounty.vercel.app |
+| Current v2.2 contract | [`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) |
+| Deployment transaction | [`0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) |
+| v2.2 deployment proof | [Bradbury v2.2 proof](docs/proofs/bradbury-v22-deployment-proof.json) |
 | Source | https://github.com/unifyWeb3/contentbounty |
 | X walkthrough | [Watch on X](https://x.com/i/status/2087119821921993214) |
 | YouTube demo | [Watch on YouTube](https://youtu.be/wv_5xmYamDU) |
-| Historical v2.1.1 Bradbury contract | [`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
-| Historical deployment transaction | [`0x683451...4d93`](https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93) |
-| Historical persistent proof | [Bradbury proof artifact](docs/proofs/bradbury-persistent-proof-v1.json) |
-| Verification procedure | [Live consensus testing](docs/LIVE_CONSENSUS_TESTING.md) |
-| Historical v2.1.1 evidence fixture | [Approval evidence](https://contentbounty-live-evidence.contentbounty.workers.dev/approve.txt) |
+| Historical v2.1.1 contract (archived) | [`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
+| Historical deployment tx | [`0x683451...4d93`](https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93) |
+| Historical proof | [Bradbury proof v1](docs/proofs/bradbury-persistent-proof-v1.json) |
 
 ## How it works
 
@@ -77,31 +82,37 @@ The model does not choose the payment amount or recipient.
 | Bradbury explorer | Provides public contract and transaction lifecycle evidence. |
 | `genlayer-js` | Connects the Vue frontend to reads and externally signed wallet writes. |
 
-## Verified Bradbury proof
+## Verified Bradbury proofs
+
+**Current v2.2** (delayed settlement, `APPROVED_PENDING` + 48h challenge window):
+
+| Surface | Details |
+|---|---|
+| Contract | [`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) Bradbury 4221 |
+| Deployment tx | [`0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) `FINALIZED/AGREE` |
+| Source | commit `2e35764`, SHA `b5e89cf03ae7f79d...` (minified 52237 bytes, `py-genlayer:1jb45...`) |
+| Deployment proof | [Bradbury v2.2 proof](docs/proofs/bradbury-v22-deployment-proof.json) |
+| Frontend bundle | verified `index-eiZkinTR.js` contains `0x7F73...`, historical `0x0d997...` absent |
+
+The v2.2 deployment proof verifies lint 3/3, 19 methods (9 view/10 write), direct 67 pass, frontend 97 pass, source hash match, and that `evaluate_submission` never moves reward (only `claim_reward` does). Live challenge-window demo is completed via a fresh bounty created against this address (see proof notes and live transaction evidence below).
+
+**Historical v2.1.1** (immediate settlement, no challenge window):
 
 | Scenario | On-chain result | Evidence |
 |---|---|---|
 | Bounty `#0`, submission `#0` | `REJECTED`, `CRITERIA_NOT_MET` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0xd3d6cafc07bbe23725fc742dab66e6d43d0b7c2ba36c7d19082cb7ad5657df33) |
 | Bounty `#4`, submission `#2` | `INCONCLUSIVE`, `DIGEST_MISMATCH` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa) |
-| Bounty `#5`, submission `#3` | `APPROVED`, `ALL_REQUIRED_CRITERIA_MET` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227) |
+| Bounty `#5`, submission `#3` | `APPROVED` (immediate), `ALL_REQUIRED_CRITERIA_MET` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227) |
 
-Those links are historical proof artifacts for the previously deployed contract
-version. They are not evidence that the current `contracts/content_bounty.py`
-matches the live address, and they do not demonstrate the new delayed-claim
-state machine. A fresh deployment and fresh proof must be generated after this
-implementation is verified.
+Historical links are archived at [`0x0d997...`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) and do not demonstrate the v2.2 delayed-claim machine.
 
 ## Verification path
 
-1. Open https://contentbounty.vercel.app and confirm the interface identifies
-   GenLayer Bradbury.
-2. Open the deployed contract from the live product table.
-3. Inspect bounty `#0` for the clear rejection result.
-4. Inspect bounty `#4` for the changed-evidence `DIGEST_MISMATCH` result.
-5. Treat bounty `#5` as historical evidence only; the current implementation
-   requires `APPROVED_PENDING`, a challenge window, and a separate claim.
-6. Compare the public app state with the three explorer transactions above.
-7. Run `npm run verify:live-proof:online` for a read-only lifecycle check.
+1. Open https://contentbounty.vercel.app — confirm it loads `index-eiZkinTR.js` containing `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` and not `0x0d997...` (`curl -s https://contentbounty.vercel.app/assets/index-eiZkinTR.js | grep 0x7F73`).
+2. Open the **current v2.2 contract** `0x7F73...` on the explorer; verify `get_allowed_sources` and `get_claim_tag`.
+3. For historical comparison, open the archived `0x0d997...` and its three transactions above.
+4. Verify v2.2 deployment proof `docs/proofs/bradbury-v22-deployment-proof.json` matches the live address, source SHA, and finalized deployment.
+5. Run `npm run verify:live-proof:online` for a read-only lifecycle check (historical), and inspect the live v2.2 bounty created for the current demo (see Phase 4-9 evidence).
 
 ## Product screens
 
@@ -177,17 +188,14 @@ cp frontend/.env.example frontend/.env
 npm --prefix frontend run dev
 ```
 
-Production build against the tracked historical configuration:
+Production build against the current v2.2 deployment:
 
 ```bash
-VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS=0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04 npm run build:frontend
+VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS=0x7F73e10059D0C669c2d2fe3FA716312587aC87c8 npm run build:frontend
 npm run verify:frontend-bundle
 ```
 
-The production build fails closed if required network or address configuration
-is missing or malformed. The tracked address is the historical v2.1.1
-deployment, so a successful bundle does not establish v2.2 runtime
-compatibility. A later v2.2 deployment and environment update are required.
+The production build fails closed if required network or address configuration is missing or malformed. The tracked address is the live v2.2 deployment; the historical `0x0d997...` is archived.
 
 ## Prepare evidence
 
@@ -338,12 +346,9 @@ npm run verify:live-proof:online
 
 ## Deployment status
 
-The checked-in Bradbury proof is real historical v2.1.1 evidence: its three
-scenarios finalized on-chain and its payout proof records a persistent testnet
-balance delta rather than a simulated balance. The current v2.2 contract and
-frontend method surface are not deployed. The tracked frontend address still
-points to v2.1.1 and must not be presented as runtime-compatible with this
-source until a later deployment, environment update, and proof regeneration.
+**Current v2.2** is deployed and finalized at `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (Bradbury 4221, tx `0x7b5ef343...8532`, source `2e35764`/`b5e89cf...`). The public frontend at https://contentbounty.vercel.app serves this address; the bundle verifier confirms `0x7F73...` present and `0x0d997...`/`0xFf546...` absent. The checked-in v2.1.1 proof remains valid historical evidence but is not v2.2 evidence.
+
+Live challenge-window demonstration uses a fresh bounty on the current address. Direct tests prove `evaluate_submission` moves no reward; only `claim_reward` after 48h with no active challenge does. See deployment proof and live transaction evidence.
 
 ## Documentation
 
