@@ -1,0 +1,3 @@
+This article is arbitrary HTTPS text without claim tag
+It should be rejected as CLAIM_TAG_MISSING
+https://docs.genlayer.com/
