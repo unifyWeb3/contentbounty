@@ -131,3 +131,50 @@ transaction is executed against the state that includes it. Two transactions exe
 stale snapshot ("Challenge does not exist", "Submission does not exist"). The live harness now
 polls the FINALIZED read state until the expected change is visible before sending a dependent
 transaction, and every read is pinned with transactionHashVariant=finalized.
+
+## Stage 6 — Deploy to Studionet and prove live (DONE)
+
+Contract 0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da, deployment tx
+0xbb3d4e6681db88931c2d1e19ccafc6daf10ffd48bd691850658cdc98782f18a2, deployed sha256
+0f9e045a462992e226fa69203049b2e9ea108cd9040c097f0c7449bb3cc4c0a5 == repository file
+(BYTE IDENTICAL true). Full table in docs/MILESTONE-1.md.
+
+Live: post 0x1e6284fd, submit 0xabc8fd2c, evaluate 0xdc7ee918 (APPROVE, bits 11),
+claim 0x1881b685 (NO value moved, reward recorded pending), withdraw 0xa633957c
+(+1 GEN exactly). Refusals: 0x649116a7 (double withdraw), 0x751da191 (wrong recipient),
+0xf2793b0e (double claim), 0x42d3fb6f, 0x980ec59d, 0x34dc761a — all execution_result=ERROR.
+Challenge: 0x6a8bd9a2 (challenge), 0x9f1b8773 (review UPHOLD), 0xc7259968 (finalize),
+0x9bee3dfa (withdraw_bond, +0.05 GEN exactly). Injected: submit 0xc2f7d111, evaluate
+0x30e8d535 -> REJECTED, criteria bits 00. Refund: post 0x28db9957, cancel 0x7490187c
+(NO value moved), withdraw_refund 0x2daedf81 (+1 GEN exactly).
+
+Two transactions were executed against a stale snapshot and reverted
+("Challenge does not exist", "Submission does not exist"). The harness now confirms the
+finalized read state before sending a dependent transaction. See docs/MILESTONE-1.md §6.
+
+The contract's published liability is exact. The observed native balance exceeds it by
+122000000000000 wei, which is exactly the value carried by the reverted payable calls
+(2 runs x (0.01 + 0.001 + 0.05) GEN): the Studionet simulator does not roll back the
+value of a reverted payable call. Recorded in docs/MILESTONE-1.md §4.
+
+## Stage 7 — Make the change verifiable (DONE)
+
+docs/MILESTONE-1.md and submission/milestone-text.md written. The short text is 996
+characters, all lowercase. README updated. AGENTS.md added.
+
+## Stage 8 — Final checks and publish (DONE)
+
+- Clean worktree at /tmp/opencode/clean-tree (detached at a3e552e): lint 3/3, check:contract
+  ok (24 methods, 11 view / 13 write), 84 direct tests, 3 evidence tests, 15 network,
+  99 lifecycle, 3 hosting, 111 frontend, build ok, bundle ok, verify:live-proof ok.
+  All exit 0, zero skips.
+- Pre-push sweep: no key file or .env tracked (only frontend/.env.example and
+  frontend/.env.production, both public VITE_ config), no live key in the diff or in any
+  commit in the history, the only 64-hex strings in the diff are three sha256 digests.
+- Pushed milestone-1, merged into main with a normal merge commit 8c974bb, pushed main.
+- Vercel: the existing project oxunify/contentbounty was redeployed ONCE with only the
+  public env vars VITE_GENLAYER_NETWORK=studionet and
+  VITE_CONTRACT_ADDRESS=0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da. Live URL
+  https://contentbounty.vercel.app serves assets/index-WO0pc22i.js, which contains the v2.3
+  address and not the v2.2 one. Opened in Chromium: it reads the v2.3 contract and shows
+  the four live bounties and the published escrow liability, no console errors.
