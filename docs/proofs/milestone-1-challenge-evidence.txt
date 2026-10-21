@@ -1,0 +1,23 @@
+ContentBounty v2.3 milestone proof — challenge evidence
+
+This document is the published evidence source for the pre-payout challenge
+filed against the milestone submission on GenLayer Studionet. It is served
+over canonical HTTPS from raw.githubusercontent.com and is rendered by the
+GenVM web renderer during the challenge review consensus round.
+
+Subject: a rights and plagiarism dispute about the milestone submission.
+
+The challenger states that the submitted document was published by the
+challenger before the submitting wallet claimed it, and that the submitting
+wallet therefore has no prior authorship of the material. The challenger
+records the publication date of the earlier copy and asks the review round to
+compare the two texts.
+
+The challenger also states that the earlier copy and the submitted document
+differ only in the appended wallet claim tag, which is the same observation a
+reviewer would make when comparing a claimed copy with an earlier public
+copy of the same text.
+
+The GenLayer evidence commitment for this document is the SHA-256 of its
+normalized text, recomputed independently by every GenLayer validator that
+participates in the review round.
