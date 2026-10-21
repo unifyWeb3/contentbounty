@@ -29,4 +29,4 @@ the per-criterion bits that GenLayer validators agree on.
 
 Wallet claim tag for this submission:
 
-cb-af8ae15f51d8357f381fd52191e67ce5b5e5e26c
+cb-ec1905bf8acce879ed1875a65a55807845bb0ec2
