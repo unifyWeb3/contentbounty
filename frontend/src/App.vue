@@ -1321,6 +1321,7 @@ onUnmounted(() => {
               <div v-if="submissionsLoading" class="empty-inline">Reading submissions and their verdicts…</div>
               <div v-else-if="submissionsError" class="empty-inline">{{ submissionsError }}</div>
               <div v-else-if="!submissions.length" class="empty-inline">No submissions yet.</div>
+              <template v-else>
               <article v-for="submission in submissions" :key="submission.id" class="submission-card">
                 <div class="submission-head"><div><span class="mono">Submission #{{ submission.id }}</span><a :href="submission.evidence_uri" target="_blank" rel="noreferrer">Open evidence ↗</a></div><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
                 <p class="digest mono">sha256:{{ submission.evidence_sha256 }}</p>
@@ -1386,6 +1387,7 @@ onUnmounted(() => {
                   <button v-if="hasChallengeAction(challengeFor(submission)?.id ?? 0, 'withdraw_bond')" class="button primary" :disabled="Boolean(actionBusy)" @click="withdrawSubmissionChallenge(submission)">Withdraw bond</button>
                 </div>
               </article>
+              </template>
             </div>
           </article>
           <div v-else class="detail-placeholder"><span>←</span><p>Select a bounty to inspect its rubric, deadlines, submissions, and settlement evidence.</p></div>
