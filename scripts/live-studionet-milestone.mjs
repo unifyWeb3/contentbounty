@@ -107,6 +107,21 @@ function claimTagFor(bountyId, creatorAddress, contract) {
   return 'cb-' + keccak256(toHex(payload)).slice(2, 22)
 }
 
+function executionOf(receipt) {
+  const leader = receipt?.consensus_data?.leader_receipt?.[0]
+  if (leader?.execution_result) return String(leader.execution_result).toUpperCase()
+  return String(
+    receipt?.txExecutionResultName ?? receipt?.txExecutionResult ?? receipt?.data?.execution_result ?? 'UNKNOWN',
+  ).toUpperCase()
+}
+
+function errorOf(receipt) {
+  const stderr = receipt?.consensus_data?.leader_receipt?.[0]?.genvm_result?.stderr ?? ''
+  const match = stderr.match(/AssertionError: ([^\n]+)/)
+  if (match) return match[1]
+  return stderr.split('\\n').filter(Boolean).slice(-1)[0] ?? ''
+}
+
 async function waitFinalized(hash, label) {
   const receipt = await client.waitForTransactionReceipt({
     hash,
@@ -116,9 +131,10 @@ async function waitFinalized(hash, label) {
   })
   const summary = {
     tx: hash,
-    status: receipt.statusName ?? receipt.status,
-    consensus: receipt.resultName ?? receipt.result,
-    execution: receipt.txExecutionResultName ?? receipt.txExecutionResult,
+    status: receipt.status_name ?? receipt.status_name ?? receipt.statusName ?? receipt.status,
+    consensus: receipt.result_name ?? receipt.resultName ?? receipt.result,
+    execution: executionOf(receipt),
+    error: errorOf(receipt),
   }
   console.log(`[${label}]`, JSON.stringify(summary))
   return { receipt, summary }
@@ -134,12 +150,27 @@ async function write({ account, contract, functionName, args = [], value = 0n, l
   })
   console.log(`[${label}] submitted`, hash)
   const { receipt, summary } = await waitFinalized(hash, label)
-  const execution = receipt?.txExecutionResultName ?? receipt?.txExecutionResult ?? receipt?.data?.execution_result
-  return { hash, summary, execution }
+  const execution = executionOf(receipt)
+  return { hash, summary, execution, error: errorOf(receipt) }
 }
 
 async function read(contract, functionName, args = []) {
   return client.readContract({ address: contract, functionName, args })
+}
+
+async function nextBountyId(contract) {
+  const page = await read(contract, 'get_bounties_page', [0, 50])
+  return page.length
+}
+
+async function nextSubmissionId(contract) {
+  const accounting = await read(contract, 'get_escrow_accounting')
+  return accounting.submission_count
+}
+
+async function nextChallengeId(contract) {
+  const accounting = await read(contract, 'get_escrow_accounting')
+  return accounting.challenge_count + 1
 }
 
 async function expectRevert({ account, contract, functionName, args = [], value = 0n, label }) {
@@ -151,10 +182,10 @@ async function expectRevert({ account, contract, functionName, args = [], value 
       retries: 200,
       interval: 3000,
     })
-    const execution = receipt?.txExecutionResultName ?? receipt?.txExecutionResult ?? receipt?.data?.execution_result
-    const failed = String(execution ?? '').toUpperCase().includes('ERROR')
-    console.log(`[${label}] tx=${hash} execution=${execution} rejected=${failed}`)
-    return { hash, rejected: failed, execution }
+    const execution = executionOf(receipt)
+    const failed = execution.includes('ERROR')
+    console.log(`[${label}] tx=${hash} execution=${execution} rejected=${failed} error=${errorOf(receipt)}`)
+    return { hash, rejected: failed, execution, error: errorOf(receipt) }
   } catch (error) {
     console.log(`[${label}] client-side rejection:`, error?.shortMessage ?? error?.message)
     return { hash: null, rejected: true, error: String(error?.shortMessage ?? error?.message) }
@@ -190,6 +221,7 @@ if (stage === 'deploy') {
     { id: 'c1', requirement: 'The evidence names GenLayer.' },
     { id: 'c2', requirement: 'The evidence includes an official GenLayer documentation URL.' },
   ])
+  const bountyId = await nextBountyId(contract)
   const result = await write({
     account: deployer,
     contract,
@@ -205,11 +237,11 @@ if (stage === 'deploy') {
     value: REWARD,
     label: 'post_bounty',
   })
-  const bounty = await read(contract, 'get_bounty', [0])
-  const tag = claimTagFor(0, creator.address, contract)
+  const bounty = await read(contract, 'get_bounty', [bountyId])
+  const tag = claimTagFor(bountyId, creator.address, contract)
   console.log('bounty', JSON.stringify(bounty))
-  console.log('creator claim tag for bounty 0:', tag)
-  writeState({ bountyId: 0, postTx: result.hash, claimTag: tag })
+  console.log('creator claim tag for bounty', bountyId, ':', tag)
+  writeState({ bountyId, postTx: result.hash, claimTag: tag })
 } else if (stage === 'submit') {
   const contract = state.contract
   const result = await write({
@@ -314,19 +346,66 @@ if (stage === 'deploy') {
     value: 5n * 10n ** 16n,
     label: 'refusal: invalid challenge reason',
   })
+} else if (stage === 'challenge-post') {
+  const contract = state.contract
+  const rubric = JSON.stringify([
+    { id: 'c1', requirement: 'The evidence names GenLayer.' },
+    { id: 'c2', requirement: 'The evidence includes an official GenLayer documentation URL.' },
+  ])
+  const bountyId = await nextBountyId(contract)
+  const post = await write({
+    account: deployer,
+    contract,
+    functionName: 'post_bounty',
+    args: [
+      'ContentBounty v2.3 challenge window proof',
+      'A compliant submission that a third party disputes before the payout.',
+      rubric,
+      BigInt(SUBMISSION_WINDOW_SECONDS),
+      BigInt(EVALUATION_GRACE_SECONDS),
+      BigInt(CHALLENGE_WINDOW_SECONDS),
+    ],
+    value: REWARD,
+    label: 'post_bounty (challenge scenario)',
+  })
+  const tag = claimTagFor(bountyId, creator.address, contract)
+  console.log('creator claim tag for bounty', bountyId, ':', tag)
+  writeState({ challengeBountyId: bountyId, challengeTag: tag, challengePostTx: post.hash })
+} else if (stage === 'challenge-submit') {
+  const contract = state.contract
+  const bountyId = state.challengeBountyId
+  const submit = await write({
+    account: creator,
+    contract,
+    functionName: 'submit_content',
+    args: [BigInt(bountyId), evidenceUrl],
+    label: 'submit_content (challenge scenario)',
+  })
+  const submissionId = await nextSubmissionId(contract)
+  const evaluate = await write({
+    account: creator,
+    contract,
+    functionName: 'evaluate_submission',
+    args: [BigInt(submissionId)],
+    label: 'evaluate_submission (challenge scenario)',
+  })
+  const submission = await read(contract, 'get_submission', [BigInt(submissionId)])
+  console.log('challenge scenario submission', JSON.stringify(submission))
+  writeState({ challengeSubmissionId: submissionId, challengeSubmitTx: submit.hash, challengeEvaluateTx: evaluate.hash })
 } else if (stage === 'challenge') {
   const contract = state.contract
-  const bond = BigInt(await read(contract, 'get_challenge_bond', [BigInt(state.submissionId ?? 0)]))
+  const submissionId = state.challengeSubmissionId
+  const bond = BigInt(await read(contract, 'get_challenge_bond', [BigInt(submissionId)]))
   console.log('challenge bond', bond.toString())
   const challenge = await write({
     account: challenger,
     contract,
     functionName: 'challenge_submission',
-    args: [BigInt(state.submissionId ?? 0), 'RIGHTS_OR_PLAGIARISM', challengeUrl ?? evidenceUrl],
+    args: [BigInt(submissionId), 'RIGHTS_OR_PLAGIARISM', challengeUrl],
     value: bond,
     label: 'challenge_submission',
   })
-  const challengeId = 1
+  const challengeId = await nextChallengeId(contract)
   const review = await write({
     account: challenger,
     contract,
@@ -334,37 +413,48 @@ if (stage === 'deploy') {
     args: [BigInt(challengeId)],
     label: 'review_challenge',
   })
-  const finalized = await write({
-    account: challenger,
-    contract,
-    functionName: 'finalize_challenge',
-    args: [BigInt(challengeId)],
-    label: 'finalize_challenge',
-  })
   const record = await read(contract, 'get_challenge', [BigInt(challengeId)])
-  console.log('challenge', JSON.stringify(record))
-  const before = await balanceOf(challenger.address)
-  const withdraw = await write({
-    account: challenger,
-    contract,
-    functionName: 'withdraw_bond',
-    args: [BigInt(challengeId)],
-    label: 'withdraw_bond',
-  })
-  const after = await balanceOf(challenger.address)
-  console.log('challenger balance before', before.toString(), 'after', after.toString(), 'delta', (after - before).toString())
-  writeState({
-    challengeTx: challenge.hash,
-    reviewTx: review.hash,
-    finalizeTx: finalized.hash,
-    withdrawBondTx: withdraw.hash,
-  })
+  if (record.proposed_outcome !== 'UPHOLD' && record.proposed_outcome !== 'DISMISS') {
+    console.log('review did not reach a final proposal:', JSON.stringify(record))
+    writeState({ challengeTx: challenge.hash, reviewTx: review.hash })
+  } else {
+    const finalized = await write({
+      account: challenger,
+      contract,
+      functionName: 'finalize_challenge',
+      args: [BigInt(challengeId)],
+      label: 'finalize_challenge',
+    })
+    const settled = await read(contract, 'get_challenge', [BigInt(challengeId)])
+    console.log('challenge', JSON.stringify(settled))
+    const recipient = settled.bond_recipient.toLowerCase()
+    const recipientAccount = recipient === creator.address.toLowerCase()
+      ? creator
+      : recipient === challenger.address.toLowerCase() ? challenger : null
+    if (!recipientAccount) {
+      console.log('unexpected bond recipient', recipient)
+    } else {
+      const before = await balanceOf(recipientAccount.address)
+      const withdraw = await write({
+        account: recipientAccount,
+        contract,
+        functionName: 'withdraw_bond',
+        args: [BigInt(challengeId)],
+        label: 'withdraw_bond',
+      })
+      const after = await balanceOf(recipientAccount.address)
+      console.log('bond recipient', recipientAccount.address, 'balance before', before.toString(), 'after', after.toString(), 'delta', (after - before).toString())
+      writeState({ withdrawBondTx: withdraw.hash })
+    }
+    writeState({ challengeTx: challenge.hash, reviewTx: review.hash, finalizeTx: finalized.hash })
+  }
 } else if (stage === 'injected') {
   const contract = state.contract
   const rubric = JSON.stringify([
     { id: 'c1', requirement: 'The evidence names GenLayer.' },
     { id: 'c2', requirement: 'The evidence includes an official GenLayer documentation URL.' },
   ])
+  const bountyId = await nextBountyId(contract)
   const post = await write({
     account: deployer,
     contract,
@@ -380,9 +470,8 @@ if (stage === 'deploy') {
     value: REWARD,
     label: 'post_bounty (injected scenario)',
   })
-  const bountyId = 1
   const tag = claimTagFor(bountyId, creator.address, contract)
-  console.log('creator claim tag for bounty 1:', tag)
+  console.log('creator claim tag for bounty', bountyId, ':', tag)
   writeState({ injectedBountyId: bountyId, injectedTag: tag, injectedPostTx: post.hash })
 } else if (stage === 'injected-submit') {
   const contract = state.contract
@@ -390,17 +479,19 @@ if (stage === 'deploy') {
     account: creator,
     contract,
     functionName: 'submit_content',
-    args: [BigInt(state.injectedBountyId ?? 1), injectedUrl],
+    args: [BigInt(state.injectedBountyId), injectedUrl],
     label: 'submit_content (injected scenario)',
   })
+  const injectedSubmissionId = await nextSubmissionId(contract)
   const evaluate = await write({
     account: creator,
     contract,
     functionName: 'evaluate_submission',
-    args: [BigInt(state.injectedSubmissionId ?? 1)],
+    args: [BigInt(injectedSubmissionId)],
     label: 'evaluate_submission (injected scenario)',
   })
-  const submission = await read(contract, 'get_submission', [BigInt(state.injectedSubmissionId ?? 1)])
+  state.injectedSubmissionId = injectedSubmissionId
+  const submission = await read(contract, 'get_submission', [BigInt(state.injectedSubmissionId)])
   console.log('injected submission', JSON.stringify(submission))
   writeState({ injectedSubmitTx: submit.hash, injectedEvaluateTx: evaluate.hash })
 } else if (stage === 'refund') {
@@ -409,6 +500,7 @@ if (stage === 'deploy') {
     { id: 'c1', requirement: 'The evidence names GenLayer.' },
     { id: 'c2', requirement: 'The evidence includes an official GenLayer documentation URL.' },
   ])
+  const bountyId = await nextBountyId(contract)
   const post = await write({
     account: deployer,
     contract,
@@ -424,7 +516,6 @@ if (stage === 'deploy') {
     value: REWARD,
     label: 'post_bounty (refund scenario)',
   })
-  const bountyId = 2
   const before = await balanceOf(deployer.address)
   const cancel = await write({
     account: deployer,
