@@ -1677,3 +1677,37 @@ def test_poster_may_submit_to_their_own_bounty_without_profit(
     direct_vm.sender = direct_bob
     with pytest.raises(AssertionError, match="Only the creator can withdraw"):
         contract.withdraw_reward(submission_id)
+
+
+def test_challenge_review_with_mutated_challenge_source_is_inconclusive_not_a_revert(
+    direct_vm, direct_deploy, direct_alice, direct_bob, direct_charlie
+):
+    """A challenge source that changed after it was filed must produce a
+    retryable INCONCLUSIVE review, not a revert. This failed on the accepted
+    v2.2 contract because DIGEST_MISMATCH was not a declared error class."""
+    contract = direct_deploy(CONTRACT)
+    direct_vm.sender = direct_alice
+    bounty_id = post(contract, direct_vm)
+    submission_id, source_body = submit(contract, direct_vm, bounty_id, direct_alice)
+    approve(contract, direct_vm, submission_id)
+    challenge_id, _ = open_challenge(
+        contract,
+        direct_vm,
+        submission_id,
+        direct_charlie,
+        evidence_body="Challenge evidence grounded in a public source.",
+    )
+
+    def web_handler(data):
+        if data["url"] == URI:
+            return {"ok": {"response": {"status": 200, "body": source_body}}}
+        return {"ok": {"response": {"status": 200, "body": "Challenge evidence changed after filing."}}}
+
+    direct_vm.clear_mocks()
+    direct_vm._live_web_handler = web_handler
+    result = contract.review_challenge(challenge_id)
+    assert result["outcome"] == "INCONCLUSIVE"
+    assert result["error_class"] == "DIGEST_MISMATCH"
+    challenge = contract.get_challenge(challenge_id)
+    assert challenge["status"] == "OPEN"
+    assert challenge["attempt_count"] == 1

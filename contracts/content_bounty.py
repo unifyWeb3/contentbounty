@@ -83,6 +83,11 @@ CHALLENGE_ERROR_CLASSES = (
     "[EXTERNAL]",
     "[TRANSIENT]",
     "[LLM_ERROR]",
+    # A challenge source that changed after it was filed is a deterministic,
+    # retryable outcome. Without this class the review round reverted instead
+    # of returning INCONCLUSIVE, and the challenge could only be resolved by
+    # waiting for the 48 hour review deadline.
+    "DIGEST_MISMATCH",
 )
 
 # The dispute window is a poster-declared parameter with a hard floor and a

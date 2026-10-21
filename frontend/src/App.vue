@@ -29,76 +29,78 @@ import {
   validateSourceUri,
   type ChallengeReason,
 } from './lib/provenance'
+import {
+  availableActions,
+  sameAddress,
+  type BountyState,
+  type ChallengeState,
+  type SubmissionState,
+} from './lib/statusActions'
+import { describeVerdict, type VerdictRecord } from './lib/verdict'
 
 type Address = `0x${string}`
 
-interface Bounty {
-  id: number
-  poster: string
+interface Bounty extends BountyState {
   title: string
   description: string
   rubric_json: string
+  rubric_sha256: string
   rubric_version: string
   reward: number | string | bigint
   created_at: number
-  submission_deadline: number
-  evaluation_deadline: number
   status: 'OPEN' | 'LOCKED' | 'FILLED' | 'CANCELLED' | 'EXPIRED'
-  submission_count: number
   has_winner: boolean
   winner_submission_id: number
-  has_provisional_winner: boolean
-  provisional_submission_id: number
 }
 
-interface Submission {
-  id: number
-  bounty_id: number
-  creator: string
+interface Submission extends SubmissionState {
   evidence_uri: string
   evidence_sha256: string
   status: 'PENDING' | 'APPROVED_PENDING' | 'APPROVED' | 'REJECTED' | 'INCONCLUSIVE' | 'SUPERSEDED'
-  attempt_count: number
   submitted_at: number
   evaluated_at: number
   decision: '' | 'APPROVE' | 'REJECT' | 'INCONCLUSIVE'
   criteria_bits: string
   score_bucket: number
   reason_code: string
-  feedback: string
+  verdict_code: string
   rubric_version: string
   evaluator_version: string
   claim_tag: string
   claim_tag_version: string
   approved_at: number
-  challenge_deadline: number
-  active_challenge_id: number
   latest_challenge_id: number
-  reward_claimed: boolean
 }
 
-interface Challenge {
-  id: number
+interface Challenge extends ChallengeState {
   submission_id: number
   bounty_id: number
   challenger: string
   reason_code: ChallengeReason
   evidence_uri: string
   evidence_sha256: string
-  bond: number | string | bigint
   status: 'OPEN' | 'UPHELD' | 'DISMISSED' | 'TIMED_OUT'
   created_at: number
-  review_deadline: number
-  attempt_count: number
   proposed_outcome: '' | 'UPHOLD' | 'DISMISS' | 'INCONCLUSIVE'
   proposed_reason_code: string
   proposed_error_class: string
-  proposed_feedback: string
   reviewed_at: number
   finalized_at: number
   bond_released: boolean
   bond_recipient: string
   bond_disposition: string
+}
+
+interface EscrowAccounting {
+  bounty_escrow_total: number
+  refund_pending_total: number
+  reward_pending_total: number
+  bond_escrowed_total: number
+  bond_pending_total: number
+  expected_native_balance: number
+  bounty_count: number
+  submission_count: number
+  challenge_count: number
 }
 
 interface CriterionDraft {
@@ -108,7 +110,7 @@ interface CriterionDraft {
 
 interface TxEvidence {
   hash: string
-  action: 'POST' | 'SUBMIT' | 'EVALUATE' | 'CANCEL' | 'EXPIRE' | 'CHALLENGE' | 'REVIEW_CHALLENGE' | 'FINALIZE_CHALLENGE' | 'TIMEOUT_CHALLENGE' | 'CLAIM'
+  action: 'POST' | 'SUBMIT' | 'EVALUATE' | 'CANCEL' | 'EXPIRE' | 'CHALLENGE' | 'REVIEW_CHALLENGE' | 'FINALIZE_CHALLENGE' | 'TIMEOUT_CHALLENGE' | 'CLAIM' | 'WITHDRAW_REWARD' | 'WITHDRAW_REFUND' | 'WITHDRAW_BOND'
   entityId?: number
   label: string
   submittedAt: number
@@ -136,14 +138,20 @@ const loading = ref(false)
 const actionBusy = ref('')
 const notice = ref<{ type: 'info' | 'success' | 'error'; message: string } | null>(null)
 const bounties = ref<Bounty[]>([])
+const bountiesError = ref('')
 const selectedBounty = ref<Bounty | null>(null)
 const submissions = ref<Submission[]>([])
+const submissionsLoading = ref(false)
+const submissionsError = ref('')
 const activitySubmissions = ref<Submission[]>([])
 const transactions = ref<TxEvidence[]>(loadTransactions())
 const allowedSources = ref<string[]>([])
 const claimTag = ref('')
 const claimTagLoading = ref(false)
 const challenges = ref<Record<number, Challenge>>({})
+const verdicts = ref<Record<number, VerdictRecord>>({})
+const escrow = ref<EscrowAccounting | null>(null)
+const escrowError = ref('')
 const challengeTarget = ref<Submission | null>(null)
 const challengeBond = ref(0n)
 const nowSeconds = ref(Math.floor(Date.now() / 1000))
@@ -156,6 +164,7 @@ const postForm = ref({
   reward: '',
   submissionDays: '7',
   evaluationDays: '3',
+  challengeWindowHours: '48',
   criteria: [
     { id: 'c1', requirement: '' },
     { id: 'c2', requirement: '' },
@@ -187,6 +196,10 @@ const verifiedFinalizedTransactions = computed(() => transactions.value.filter((
     txExecutionResultName: entry.executionResultName,
   }),
 ).length)
+const escrowTotal = computed(() => {
+  if (!escrow.value) return 0n
+  return BigInt(escrow.value.expected_native_balance ?? 0)
+})
 const submitUriError = computed(() => {
   const uri = submitForm.value.evidenceUri
   return uri ? validateSourceUri(uri, allowedSources.value) : null
@@ -194,6 +207,30 @@ const submitUriError = computed(() => {
 const supportedSourceLabels = computed(() => allowedSources.value.map((host) => (
   host === 'substack.com' ? 'substack.com + subdomains' : host
 )))
+
+const actionSet = computed(() => availableActions({
+  now: nowSeconds.value,
+  wallet: walletAddress.value || null,
+  bounty: selectedBounty.value,
+  submissions: submissions.value,
+  challenges: Object.values(challenges.value),
+}))
+
+const bountyActions = computed(() => actionSet.value.bounty)
+const submissionActions = computed(() => actionSet.value.submission)
+const challengeActions = computed(() => actionSet.value.challenge)
+
+function hasBountyAction(action: string) {
+  return bountyActions.value.includes(action as never)
+}
+
+function hasSubmissionAction(submissionId: number, action: string) {
+  return (submissionActions.value[submissionId] ?? []).includes(action as never)
+}
+
+function hasChallengeAction(challengeId: number, action: string) {
+  return (challengeActions.value[challengeId] ?? []).includes(action as never)
+}
 
 function loadTransactions(): TxEvidence[] {
   try {
@@ -272,6 +309,31 @@ function rubricFor(bounty: Bounty): CriterionDraft[] {
   }
 }
 
+function disputeWindowLabel(bounty: Bounty): string {
+  const hours = (bounty.challenge_window_seconds ?? 0) / 3_600
+  if (hours >= 1) return `${hours} h`
+  return `${Math.round((bounty.challenge_window_seconds ?? 0) / 60)} min`
+}
+
+function refundLabel(bounty: Bounty): string {
+  if (bounty.refund_status === 'PENDING') return `${formatWei(bounty.refund_amount)} GEN pending withdrawal`
+  if (bounty.refund_status === 'WITHDRAWN') return `${formatWei(bounty.refund_amount)} GEN withdrawn`
+  return 'None recorded'
+}
+
+function rewardLabel(submission: Submission): string {
+  if (submission.reward_status === 'PENDING') return `${formatWei(submission.reward_amount)} GEN pending withdrawal`
+  if (submission.reward_status === 'WITHDRAWN') return `${formatWei(submission.reward_amount)} GEN withdrawn`
+  return 'Not claimable yet'
+}
+
+function bondDispositionLabel(challenge: Challenge | undefined): string {
+  if (!challenge) return 'ESCROWED'
+  if (challenge.bond_status === 'WITHDRAWN') return 'WITHDRAWN'
+  if (challenge.bond_status === 'PENDING') return `${challenge.bond_disposition || 'RECIPIENT'} — pending withdrawal`
+  return 'ESCROWED'
+}
+
 function statusClass(status: string) {
   return `status status-${status.toLowerCase()}`
 }
@@ -281,23 +343,11 @@ function challengeFor(submission: Submission) {
 }
 
 function isCreator(submission: Submission) {
-  return Boolean(walletAddress.value) && submission.creator.toLowerCase() === walletAddress.value.toLowerCase()
+  return sameAddress(submission.creator, walletAddress.value)
 }
 
 function bountyForSubmission(submission: Submission) {
   return bounties.value.find((bounty) => bounty.id === submission.bounty_id)
-}
-
-function canEvaluate(submission: Submission) {
-  if (!selectedBounty.value) return false
-  return ['PENDING', 'INCONCLUSIVE'].includes(submission.status)
-    && submission.attempt_count < 3
-    && nowSeconds.value <= selectedBounty.value.evaluation_deadline
-    && ['OPEN', 'LOCKED'].includes(selectedBounty.value.status)
-    && (
-      !selectedBounty.value.has_provisional_winner
-      || selectedBounty.value.provisional_submission_id === submission.id
-    )
 }
 
 function evaluationEvidence(submissionId: number) {
@@ -308,9 +358,41 @@ function claimEvidence(submissionId: number) {
   return transactions.value.find((entry) => entry.action === 'CLAIM' && entry.entityId === submissionId)
 }
 
+function verdictFor(submissionId: number) {
+  return verdicts.value[submissionId]
+}function verdictView(submissionId: number) {
+  const record = verdictFor(submissionId)
+  if (!record) return null
+  return describeVerdict(record)
+}
+
 function settlementLabel(submission: Submission) {
   if (submission.status === 'APPROVED_PENDING') {
-    return `Consensus approved this submission, but no creator reward has moved. Challenge window: ${formatCountdown(submission.challenge_deadline, nowSeconds.value)}.`
+    return `Consensus approved this submission, but no creator reward has moved. Dispute window: ${formatCountdown(submission.challenge_deadline, nowSeconds.value)}.`
+  }
+  if (submission.reward_status === 'PENDING') {
+    return 'The reward is recorded as withdrawable. Nothing has moved until the creator withdraws it.'
+  }
+  if (submission.reward_status === 'WITHDRAWN') {
+    const evidence = claimEvidence(submission.id)
+    if (!evidence) {
+      return 'The reward was withdrawn by the creator. This browser has no local record of the withdrawal transaction; verify finalization and the recipient balance independently.'
+    }
+    const classification = classifyTransaction({
+      statusName: evidence.statusName,
+      resultName: evidence.resultName,
+      txExecutionResultName: evidence.executionResultName,
+    })
+    if (classification.phase === 'FINALIZED') {
+      return 'The withdrawal finalized successfully. Confirm the creator balance delta before describing the reward as paid.'
+    }
+    if (classification.phase === 'ACCEPTED') {
+      return 'The withdrawal reached consensus but is not finalized yet.'
+    }
+    if (classification.phase === 'FAILED') {
+      return `The recorded withdrawal transaction failed: ${classification.failureReason ?? 'unknown failure'}.`
+    }
+    return 'The withdrawal was submitted and remains unconfirmed.'
   }
   if (submission.status !== 'APPROVED') return ''
   const evidence = claimEvidence(submission.id)
@@ -327,48 +409,9 @@ function settlementLabel(submission: Submission) {
 }
 
 function sourceStateLabel(submission: Submission) {
-  if (submission.reason_code === 'CLAIM_TAG_MISSING') return 'The required wallet claim tag is absent from the current rendered source.'
+  if (submission.verdict_code === 'CLAIM_TAG_MISSING') return 'The required wallet claim tag is absent from the current rendered source.'
   if (submission.reason_code === 'DIGEST_MISMATCH') return 'The current rendered source no longer matches the submitted digest.'
   return ''
-}
-
-function canChallenge(submission: Submission) {
-  return submission.status === 'APPROVED_PENDING'
-    && submission.active_challenge_id === 0
-    && nowSeconds.value < submission.challenge_deadline
-    && (!walletAddress.value || !isCreator(submission))
-}
-
-function canReviewChallenge(challenge: Challenge) {
-  return challenge.status === 'OPEN'
-    && nowSeconds.value < challenge.review_deadline
-    && challenge.attempt_count < 3
-    && ['', 'INCONCLUSIVE'].includes(challenge.proposed_outcome)
-}
-
-function canFinalizeChallenge(challenge: Challenge) {
-  return challenge.status === 'OPEN' && ['UPHOLD', 'DISMISS'].includes(challenge.proposed_outcome)
-}
-
-function canTimeoutChallenge(challenge: Challenge) {
-  return challenge.status === 'OPEN'
-    && ['', 'INCONCLUSIVE'].includes(challenge.proposed_outcome)
-    && (challenge.attempt_count >= 3 || nowSeconds.value >= challenge.review_deadline)
-}
-
-function canReviewSubmissionChallenge(submission: Submission) {
-  const challenge = challengeFor(submission)
-  return Boolean(challenge && canReviewChallenge(challenge))
-}
-
-function canFinalizeSubmissionChallenge(submission: Submission) {
-  const challenge = challengeFor(submission)
-  return Boolean(challenge && canFinalizeChallenge(challenge))
-}
-
-function canTimeoutSubmissionChallenge(submission: Submission) {
-  const challenge = challengeFor(submission)
-  return Boolean(challenge && canTimeoutChallenge(challenge))
 }
 
 function reviewSubmissionChallenge(submission: Submission) {
@@ -386,17 +429,9 @@ function timeoutSubmissionChallenge(submission: Submission) {
   if (challenge) void timeoutChallenge(challenge)
 }
 
-function canClaimReward(submission: Submission) {
-  const bounty = bountyForSubmission(submission)
-  return Boolean(bounty)
-    && isCreator(submission)
-    && submission.status === 'APPROVED_PENDING'
-    && nowSeconds.value >= submission.challenge_deadline
-    && submission.active_challenge_id === 0
-    && !submission.reward_claimed
-    && bounty?.status === 'LOCKED'
-    && bounty.has_provisional_winner
-    && bounty.provisional_submission_id === submission.id
+function withdrawSubmissionChallenge(submission: Submission) {
+  const challenge = challengeFor(submission)
+  if (challenge) void withdrawBond(challenge)
 }
 
 function externalAccount(address: Address) {
@@ -561,6 +596,7 @@ async function loadBounties() {
     return
   }
   loading.value = true
+  bountiesError.value = ''
   try {
     bounties.value = (await readAllBounties()).reverse()
     if (selectedBounty.value) {
@@ -568,7 +604,8 @@ async function loadBounties() {
       if (fresh) selectedBounty.value = fresh
     }
   } catch (error: any) {
-    showNotice(`Could not load bounties: ${error?.message ?? String(error)}`, 'error')
+    bounties.value = []
+    bountiesError.value = contractErrorMessage(error)
   } finally {
     loading.value = false
   }
@@ -582,12 +619,51 @@ async function selectBounty(bounty: Bounty) {
 }
 
 async function loadSubmissions(bountyId: number) {
+  submissionsLoading.value = true
+  submissionsError.value = ''
   try {
     submissions.value = await readSubmissionsForBounty(bountyId)
     await loadChallengeDetails(submissions.value)
+    await loadVerdicts(submissions.value)
   } catch (error: any) {
     submissions.value = []
-    showNotice(`Could not load submissions: ${error?.message ?? String(error)}`, 'error')
+    submissionsError.value = contractErrorMessage(error)
+  } finally {
+    submissionsLoading.value = false
+  }
+}
+
+async function loadVerdicts(records: Submission[]) {
+  const loaded = await Promise.all(records.map(async (submission) => {
+    try {
+      const verdict = await readClient.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: 'get_submission_verdict',
+        args: [submission.id],
+      }) as VerdictRecord
+      return [submission.id, verdict] as const
+    } catch {
+      return null
+    }
+  }))
+  verdicts.value = {
+    ...verdicts.value,
+    ...Object.fromEntries(loaded.filter((entry): entry is readonly [number, VerdictRecord] => entry !== null)),
+  }
+}
+
+async function loadEscrowAccounting() {
+  if (!contractConfigured.value) return
+  escrowError.value = ''
+  try {
+    escrow.value = await readClient.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: 'get_escrow_accounting',
+      args: [],
+    }) as EscrowAccounting
+  } catch (error: any) {
+    escrow.value = null
+    escrowError.value = contractErrorMessage(error)
   }
 }
 
@@ -760,8 +836,12 @@ async function postBounty() {
     }
     const submissionSeconds = Math.round(Number(postForm.value.submissionDays) * 86_400)
     const evaluationSeconds = Math.round(Number(postForm.value.evaluationDays) * 86_400)
+    const challengeWindowSeconds = Math.round(Number(postForm.value.challengeWindowHours) * 3_600)
     if (!Number.isSafeInteger(submissionSeconds) || !Number.isSafeInteger(evaluationSeconds)) {
       throw new Error('Deadline values are invalid.')
+    }
+    if (!Number.isSafeInteger(challengeWindowSeconds) || challengeWindowSeconds < 300 || challengeWindowSeconds > 172_800) {
+      throw new Error('The dispute window must be between 5 minutes and 48 hours.')
     }
     const hash = await runWrite(
       'POST',
@@ -774,12 +854,13 @@ async function postBounty() {
         JSON.stringify(criteria),
         submissionSeconds,
         evaluationSeconds,
+        challengeWindowSeconds,
       ],
       parseGenAmount(postForm.value.reward),
     )
     if (hash) {
       postForm.value = {
-        title: '', description: '', reward: '', submissionDays: '7', evaluationDays: '3',
+        title: '', description: '', reward: '', submissionDays: '7', evaluationDays: '3', challengeWindowHours: '48',
         criteria: [{ id: 'c1', requirement: '' }, { id: 'c2', requirement: '' }],
       }
       activeView.value = 'transactions'
@@ -978,6 +1059,60 @@ async function claimReward(submission: Submission) {
   }
 }
 
+async function withdrawReward(submission: Submission) {
+  actionBusy.value = `withdraw-${submission.id}`
+  try {
+    await runWrite(
+      'WITHDRAW_REWARD',
+      `Withdraw reward for submission #${submission.id}`,
+      submission.id,
+      'withdraw_reward',
+      [submission.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function withdrawRefund(bounty: Bounty) {
+  actionBusy.value = 'withdraw-refund'
+  try {
+    await runWrite(
+      'WITHDRAW_REFUND',
+      `Withdraw refund for bounty #${bounty.id}`,
+      bounty.id,
+      'withdraw_refund',
+      [bounty.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
+async function withdrawBond(challenge: Challenge) {
+  actionBusy.value = `withdraw-bond-${challenge.id}`
+  try {
+    await runWrite(
+      'WITHDRAW_BOND',
+      `Withdraw bond for challenge #${challenge.id}`,
+      challenge.id,
+      'withdraw_bond',
+      [challenge.id],
+    )
+    await refreshSelected()
+  } catch (error: any) {
+    showNotice(contractErrorMessage(error), 'error')
+  } finally {
+    actionBusy.value = ''
+  }
+}
+
 async function cancelBounty(bounty: Bounty) {
   actionBusy.value = 'cancel'
   try {
@@ -1005,6 +1140,7 @@ async function expireBounty(bounty: Bounty) {
 async function refreshSelected() {
   await loadBounties()
   if (selectedBounty.value) await loadSubmissions(selectedBounty.value.id)
+  await loadEscrowAccounting()
 }
 
 function addCriterion() {
@@ -1018,13 +1154,7 @@ function removeCriterion(index: number) {
 }
 
 function isPoster(bounty: Bounty) {
-  return Boolean(walletAddress.value) && bounty.poster.toLowerCase() === walletAddress.value.toLowerCase()
-}
-
-function canExpire(bounty: Bounty) {
-  return ['OPEN', 'LOCKED'].includes(bounty.status)
-    && nowSeconds.value > bounty.evaluation_deadline
-    && !bounty.has_provisional_winner
+  return sameAddress(bounty.poster, walletAddress.value)
 }
 
 function onAccountsChanged(accounts: string[]) {
@@ -1042,6 +1172,7 @@ onMounted(async () => {
   await restoreWallet()
   await loadAllowedSources()
   await loadBounties()
+  await loadEscrowAccounting()
   clockHandle = window.setInterval(() => {
     nowSeconds.value = Math.floor(Date.now() / 1000)
   }, 1000)
@@ -1091,22 +1222,22 @@ onUnmounted(() => {
     <main>
       <section class="hero">
         <div>
-          <p class="eyebrow">ContentBounty v2 · consensus adjudication</p>
+          <p class="eyebrow">ContentBounty v2.3 · consensus adjudication</p>
           <h1>Escrow for work that can prove itself.</h1>
-          <p class="hero-copy">Creators commit immutable evidence. Independent GenLayer validators test every ordered criterion, while deterministic contract code controls the verdict and full reward.</p>
+          <p class="hero-copy">Creators commit immutable evidence. Independent GenLayer validators render the source and judge every ordered criterion again for themselves, deterministic contract code derives the verdict, and every payout is pulled by the party it belongs to.</p>
         </div>
         <div class="hero-proof">
           <span>Equivalence rule</span>
           <strong>digest + decision + bits + bucket + reason</strong>
-          <small>Feedback wording never controls settlement.</small>
+          <small>No model prose is stored. Verdicts are a closed set derived by contract code, and no state transition moves value.</small>
         </div>
       </section>
 
       <section class="metrics">
         <div><strong>{{ bounties.length }}</strong><span>known bounties</span></div>
         <div><strong>{{ openBounties }}</strong><span>accepting or evaluating</span></div>
-        <div><strong>{{ formatWei(lockedValue) }} GEN</strong><span>contract escrow in active bounties</span></div>
-        <div><strong>{{ verifiedFinalizedTransactions }}</strong><span>verified successful finalizations</span></div>
+        <div><strong>{{ formatWei(lockedValue) }} GEN</strong><span>escrow in active bounties</span></div>
+        <div><strong>{{ formatWei(escrowTotal) }} GEN</strong><span>contract liability, published on chain</span></div>
       </section>
 
       <section v-if="activeView === 'bounties'" class="workspace">
@@ -1115,11 +1246,22 @@ onUnmounted(() => {
           <button class="button secondary" :disabled="loading" @click="refreshSelected">{{ loading ? 'Loading…' : 'Refresh' }}</button>
         </div>
 
+        <div v-if="escrow" class="escrow-strip">
+          <div><span>Bounty escrow</span><strong>{{ formatWei(escrow.bounty_escrow_total) }} GEN</strong></div>
+          <div><span>Rewards pending withdrawal</span><strong>{{ formatWei(escrow.reward_pending_total) }} GEN</strong></div>
+          <div><span>Refunds pending withdrawal</span><strong>{{ formatWei(escrow.refund_pending_total) }} GEN</strong></div>
+          <div><span>Challenge bonds held</span><strong>{{ formatWei(escrow.bond_escrowed_total + escrow.bond_pending_total) }} GEN</strong></div>
+          <div class="escrow-total"><span>Contract liability</span><strong>{{ formatWei(escrow.expected_native_balance) }} GEN</strong></div>
+        </div>
+        <p v-else-if="escrowError" class="field-error">Escrow accounting could not be read: {{ escrowError }}</p>
+
         <div v-if="!contractConfigured" class="empty-card">
           <h3>Contract address required</h3>
           <p>Set <code>VITE_CONTRACT_ADDRESS</code> to the deployed v2 address. The historical v0.2 deployment is explicitly blocked as incompatible.</p>
         </div>
-        <div v-else-if="!loading && !bounties.length" class="empty-card"><h3>No bounties yet</h3><p>Post the first bounded rubric and escrow.</p></div>
+        <div v-else-if="loading && !bounties.length" class="empty-card"><h3>Reading the bounty index…</h3><p>The marketplace is loading from the configured contract.</p></div>
+        <div v-else-if="bountiesError" class="empty-card"><h3>The bounty index could not be read</h3><p>{{ bountiesError }}</p></div>
+        <div v-else-if="!bounties.length" class="empty-card"><h3>No bounties yet</h3><p>Post the first bounded rubric and escrow.</p></div>
         <div v-else class="bounty-layout">
           <div class="bounty-list">
             <button v-for="bounty in bounties" :key="bounty.id" :class="['bounty-card', { selected: selectedBounty?.id === bounty.id }]" @click="selectBounty(bounty)">
@@ -1141,19 +1283,25 @@ onUnmounted(() => {
               <div><dt>Poster</dt><dd><a :href="`${EXPLORER_URL}/address/${selectedBounty.poster}`" target="_blank" rel="noreferrer">{{ shortAddress(selectedBounty.poster) }}</a></dd></div>
               <div><dt>Submit by</dt><dd>{{ formatDate(selectedBounty.submission_deadline) }}</dd></div>
               <div><dt>Evaluate by</dt><dd>{{ formatDate(selectedBounty.evaluation_deadline) }}</dd></div>
+              <div><dt>Dispute window</dt><dd>{{ disputeWindowLabel(selectedBounty) }}</dd></div>
+              <div><dt>Escrow held</dt><dd>{{ formatWei(selectedBounty.escrow_balance) }} GEN</dd></div>
+              <div><dt>Refund</dt><dd>{{ refundLabel(selectedBounty) }}</dd></div>
+              <div><dt>Submissions</dt><dd>{{ selectedBounty.submission_count }}</dd></div>
             </dl>
 
             <div class="rubric">
               <p class="label">Ordered rubric · {{ selectedBounty.rubric_version }}</p>
               <ol><li v-for="criterion in rubricFor(selectedBounty)" :key="criterion.id"><strong>{{ criterion.id }}</strong><span>{{ criterion.requirement }}</span></li></ol>
+              <p class="digest mono">rubric sha256:{{ selectedBounty.rubric_sha256 }}</p>
             </div>
 
             <div class="detail-actions">
-              <button v-if="isPoster(selectedBounty) && selectedBounty.status === 'OPEN' && selectedBounty.submission_count === 0" class="button danger" :disabled="Boolean(actionBusy)" @click="cancelBounty(selectedBounty)">Cancel and request refund</button>
-              <button v-if="canExpire(selectedBounty)" class="button secondary" :disabled="Boolean(actionBusy)" @click="expireBounty(selectedBounty)">Expire permissionlessly</button>
+              <button v-if="hasBountyAction('cancel')" class="button danger" :disabled="Boolean(actionBusy)" @click="cancelBounty(selectedBounty)">Cancel and record refund</button>
+              <button v-if="hasBountyAction('expire')" class="button secondary" :disabled="Boolean(actionBusy)" @click="expireBounty(selectedBounty)">Expire permissionlessly</button>
+              <button v-if="hasBountyAction('withdraw_refund')" class="button primary" :disabled="Boolean(actionBusy)" @click="withdrawRefund(selectedBounty)">{{ actionBusy === 'withdraw-refund' ? 'Withdrawing…' : 'Withdraw refund' }}</button>
             </div>
 
-            <form v-if="['OPEN', 'LOCKED'].includes(selectedBounty.status) && nowSeconds <= selectedBounty.submission_deadline" class="evidence-form" @submit.prevent="submitEvidence">
+            <form v-if="hasBountyAction('submit')" class="evidence-form" @submit.prevent="submitEvidence">
               <div><p class="label">Publish with your wallet claim tag</p><p class="hint">This tag is specific to the selected bounty, connected wallet, chain, and contract version. Put the exact token in the public source before submitting its URL.</p></div>
               <div v-if="!connected" class="claim-tag-callout"><strong>Connect the wallet that will submit.</strong><span>The contract derives a different tag for every creator address.</span><button type="button" class="button secondary" @click="connectWallet">Connect wallet</button></div>
               <div v-else class="claim-tag-callout">
@@ -1170,11 +1318,26 @@ onUnmounted(() => {
 
             <div class="submissions">
               <div class="section-heading compact-heading"><div><p class="label">Submissions</p><p class="hint">Evaluation is permissionless. Inconclusive attempts can retry up to three times.</p></div><button class="text-button" @click="loadSubmissions(selectedBounty.id)">Refresh</button></div>
-              <div v-if="!submissions.length" class="empty-inline">No submissions.</div>
+              <div v-if="submissionsLoading" class="empty-inline">Reading submissions and their verdicts…</div>
+              <div v-else-if="submissionsError" class="empty-inline">{{ submissionsError }}</div>
+              <div v-else-if="!submissions.length" class="empty-inline">No submissions yet.</div>
               <article v-for="submission in submissions" :key="submission.id" class="submission-card">
                 <div class="submission-head"><div><span class="mono">Submission #{{ submission.id }}</span><a :href="submission.evidence_uri" target="_blank" rel="noreferrer">Open evidence ↗</a></div><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
                 <p class="digest mono">sha256:{{ submission.evidence_sha256 }}</p>
                 <p v-if="submission.claim_tag" class="digest mono">claim:{{ submission.claim_tag }} · {{ submission.claim_tag_version }}</p>
+
+                <div v-if="verdictView(submission.id)" :class="['verdict', `verdict-${verdictView(submission.id)!.tone}`]">
+                  <div class="verdict-head"><strong>{{ verdictView(submission.id)!.headline }}</strong><span class="mono">{{ submission.verdict_code || 'NOT EVALUATED' }}</span></div>
+                  <p>{{ verdictView(submission.id)!.detail }}</p>
+                  <ul v-if="verdictView(submission.id)!.criteria.length">
+                    <li v-for="criterion in verdictView(submission.id)!.criteria" :key="criterion.id">
+                      <span :class="criterion.met ? 'criterion met' : 'criterion unmet'">{{ criterion.met ? 'met' : 'not met' }}</span>
+                      <strong>{{ criterion.id }}</strong>
+                      <span>{{ criterion.requirement }}</span>
+                    </li>
+                  </ul>
+                </div>
+
                 <dl class="result-grid">
                   <div><dt>Creator</dt><dd>{{ shortAddress(submission.creator) }}</dd></div>
                   <div><dt>Attempts</dt><dd>{{ submission.attempt_count }} / 3</dd></div>
@@ -1182,8 +1345,10 @@ onUnmounted(() => {
                   <div><dt>Score bucket</dt><dd>{{ submission.decision ? `${submission.score_bucket} / 4` : '—' }}</dd></div>
                   <div><dt>Criteria bits</dt><dd class="mono">{{ submission.criteria_bits || '—' }}</dd></div>
                   <div><dt>Reason</dt><dd>{{ submission.reason_code || '—' }}</dd></div>
+                  <div><dt>Reward</dt><dd>{{ rewardLabel(submission) }}</dd></div>
+                  <div><dt>Evaluator</dt><dd class="mono">{{ submission.evaluator_version }}</dd></div>
+                  <div><dt>Rubric version</dt><dd class="mono">{{ submission.rubric_version }}</dd></div>
                 </dl>
-                <p v-if="submission.feedback" class="feedback">{{ submission.feedback }}</p>
                 <p v-if="sourceStateLabel(submission)" class="field-error">{{ sourceStateLabel(submission) }}</p>
                 <p v-if="settlementLabel(submission)" class="settlement-note">{{ settlementLabel(submission) }}</p>
                 <div v-if="submission.status === 'APPROVED_PENDING'" class="pending-panel">
@@ -1205,18 +1370,20 @@ onUnmounted(() => {
                     <div><dt>Review deadline</dt><dd>{{ formatDate(challengeFor(submission)?.review_deadline || 0) }}</dd></div>
                     <div><dt>Proposed outcome</dt><dd>{{ challengeFor(submission)?.proposed_outcome || 'NONE' }}</dd></div>
                     <div><dt>Final outcome</dt><dd>{{ challengeFor(submission)?.status === 'OPEN' ? 'PENDING' : challengeFor(submission)?.status }}</dd></div>
-                    <div><dt>Bond disposition</dt><dd>{{ challengeFor(submission)?.bond_disposition || 'ESCROWED' }}</dd></div>
+                    <div><dt>Bond disposition</dt><dd>{{ bondDispositionLabel(challengeFor(submission)) }}</dd></div>
                   </dl>
                   <p class="digest mono">evidence: <a :href="challengeFor(submission)?.evidence_uri" target="_blank" rel="noreferrer">{{ challengeFor(submission)?.evidence_uri }}</a></p>
-                  <p v-if="challengeFor(submission)?.proposed_feedback" class="feedback">{{ challengeFor(submission)?.proposed_error_class }} {{ challengeFor(submission)?.proposed_feedback }}</p>
+                  <p v-if="challengeFor(submission)?.proposed_error_class" class="feedback">{{ challengeFor(submission)?.proposed_error_class }} review result</p>
                 </div>
                 <div class="submission-actions">
-                  <button v-if="canEvaluate(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="evaluateSubmission(submission)">{{ actionBusy === `evaluate-${submission.id}` ? 'Evaluating…' : submission.status === 'INCONCLUSIVE' ? 'Retry evaluation' : 'Evaluate submission' }}</button>
-                  <button v-if="canChallenge(submission)" class="button danger" :disabled="Boolean(actionBusy)" @click="openChallengeModal(submission)">Challenge</button>
-                  <button v-if="canReviewSubmissionChallenge(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="reviewSubmissionChallenge(submission)">Review challenge</button>
-                  <button v-if="canFinalizeSubmissionChallenge(submission)" class="button primary" :disabled="Boolean(actionBusy)" @click="finalizeSubmissionChallenge(submission)">Finalize challenge</button>
-                  <button v-if="canTimeoutSubmissionChallenge(submission)" class="button secondary" :disabled="Boolean(actionBusy)" @click="timeoutSubmissionChallenge(submission)">Timeout challenge</button>
-                  <button v-if="canClaimReward(submission)" class="button primary" :disabled="Boolean(actionBusy)" @click="claimReward(submission)">{{ actionBusy === `claim-${submission.id}` ? 'Claiming…' : 'Claim reward' }}</button>
+                  <button v-if="hasSubmissionAction(submission.id, 'evaluate')" class="button secondary" :disabled="Boolean(actionBusy)" @click="evaluateSubmission(submission)">{{ actionBusy === `evaluate-${submission.id}` ? 'Evaluating…' : submission.status === 'INCONCLUSIVE' ? 'Retry evaluation' : 'Evaluate submission' }}</button>
+                  <button v-if="hasSubmissionAction(submission.id, 'challenge')" class="button danger" :disabled="Boolean(actionBusy)" @click="openChallengeModal(submission)">Challenge</button>
+                  <button v-if="hasSubmissionAction(submission.id, 'claim')" class="button primary" :disabled="Boolean(actionBusy)" @click="claimReward(submission)">{{ actionBusy === `claim-${submission.id}` ? 'Claiming…' : 'Claim reward' }}</button>
+                  <button v-if="hasSubmissionAction(submission.id, 'withdraw_reward')" class="button primary" :disabled="Boolean(actionBusy)" @click="withdrawReward(submission)">{{ actionBusy === `withdraw-${submission.id}` ? 'Withdrawing…' : 'Withdraw reward' }}</button>
+                  <button v-if="hasChallengeAction(challengeFor(submission)?.id ?? 0, 'review')" class="button secondary" :disabled="Boolean(actionBusy)" @click="reviewSubmissionChallenge(submission)">Review challenge</button>
+                  <button v-if="hasChallengeAction(challengeFor(submission)?.id ?? 0, 'finalize')" class="button primary" :disabled="Boolean(actionBusy)" @click="finalizeSubmissionChallenge(submission)">Finalize challenge</button>
+                  <button v-if="hasChallengeAction(challengeFor(submission)?.id ?? 0, 'timeout')" class="button secondary" :disabled="Boolean(actionBusy)" @click="timeoutSubmissionChallenge(submission)">Timeout challenge</button>
+                  <button v-if="hasChallengeAction(challengeFor(submission)?.id ?? 0, 'withdraw_bond')" class="button primary" :disabled="Boolean(actionBusy)" @click="withdrawSubmissionChallenge(submission)">Withdraw bond</button>
                 </div>
               </article>
             </div>
@@ -1236,7 +1403,9 @@ onUnmounted(() => {
           <div class="form-grid">
             <label>Submission window (days)<input v-model="postForm.submissionDays" required type="number" min="0.0034722222" max="90" step="0.01" /></label>
             <label>Evaluation grace (days)<input v-model="postForm.evaluationDays" required type="number" min="0.0034722222" max="30" step="0.01" /></label>
+            <label>Dispute window (hours)<input v-model="postForm.challengeWindowHours" required type="number" min="0.0833333333" max="48" step="0.25" /></label>
           </div>
+          <p class="hint">The dispute window is stored on the bounty when it is posted and cannot be changed afterwards. Creators see the exact window on the bounty before they submit. The contract accepts 5 minutes to 48 hours.</p>
           <div class="rubric-builder">
             <div class="section-heading compact-heading"><div><p class="label">Ordered rubric</p><p class="hint">Every criterion is required for approval. IDs must remain unique and stable.</p></div><button type="button" class="text-button" :disabled="postForm.criteria.length >= 8" @click="addCriterion">+ Add criterion</button></div>
             <div v-for="(criterion, index) in postForm.criteria" :key="index" class="criterion-row">
@@ -1260,7 +1429,8 @@ onUnmounted(() => {
           <article v-for="submission in mySubmissions" :key="submission.id" class="submission-card">
             <div class="submission-head"><button class="text-button" type="button" @click="openSubmissionBounty(submission)">Bounty #{{ submission.bounty_id }} · Submission #{{ submission.id }}</button><span :class="statusClass(submission.status)">{{ submission.status }}</span></div>
             <a :href="submission.evidence_uri" target="_blank" rel="noreferrer">{{ submission.evidence_uri }}</a>
-            <p class="feedback">{{ submission.feedback || 'Not evaluated yet.' }}</p>
+            <p class="feedback">{{ verdictView(submission.id)?.headline ?? 'Not evaluated yet.' }}</p>
+            <p v-if="verdictView(submission.id)" class="feedback">{{ verdictView(submission.id)?.detail }}</p>
             <div v-if="submission.status === 'APPROVED_PENDING'" class="pending-panel">
               <dl class="result-grid compact-grid">
                 <div><dt>Challenge deadline</dt><dd>{{ formatDate(submission.challenge_deadline) }}</dd></div>
@@ -1312,7 +1482,7 @@ onUnmounted(() => {
     </div>
 
     <footer>
-      <div><strong>ContentBounty v2</strong><span>{{ NETWORK_LABEL }} ({{ NETWORK_SELECTOR }}) · {{ RPC_URL }}</span></div>
+      <div><strong>ContentBounty v2.3</strong><span>{{ NETWORK_LABEL }} ({{ NETWORK_SELECTOR }}) · {{ RPC_URL }}</span></div>
       <div><a v-if="contractConfigured" :href="`${EXPLORER_URL}/address/${CONTRACT_ADDRESS}`" target="_blank" rel="noreferrer">Contract {{ shortAddress(CONTRACT_ADDRESS) }} ↗</a><span v-else>v2 contract not configured</span><span>External signer only</span></div>
     </footer>
   </div>

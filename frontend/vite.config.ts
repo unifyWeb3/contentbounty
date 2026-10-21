@@ -23,8 +23,10 @@ export default defineConfig(({ mode }) => {
     ?? fileEnvironment.VITE_GENLAYER_NETWORK
     ?? 'testnetBradbury'
   ).trim()
-  if (mode === 'production' && configuredNetwork !== 'testnetBradbury') {
-    throw new Error('The production submission build must use testnetBradbury; Studionet is smoke/demo only.')
+  if (mode === 'production' && !['testnetBradbury', 'studionet'].includes(configuredNetwork)) {
+    throw new Error(
+      'A production build requires an explicit supported GenLayer network: testnetBradbury or studionet.',
+    )
   }
   return {
     plugins: [vue()],
