@@ -70,7 +70,7 @@ async function rpc(method, params) {
 }
 
 async function balanceOf(address) {
-  const result = await rpc('eth_getBalance', [address, 'latest'])
+  const result = await withRetries(() => rpc('eth_getBalance', [address, 'latest']), 'balance')
   if (result.error) throw new Error(`balance read failed: ${JSON.stringify(result.error)}`)
   return BigInt(result.result ?? '0x0')
 }
@@ -141,28 +141,43 @@ async function waitFinalized(hash, label) {
 }
 
 async function write({ account, contract, functionName, args = [], value = 0n, label }) {
-  const hash = await client.writeContract({
+  const hash = await withRetries(() => client.writeContract({
     account,
     address: contract,
     functionName,
     args,
     value,
-  })
+  }), `write:${functionName}`)
   console.log(`[${label}] submitted`, hash)
-  const { receipt, summary } = await waitFinalized(hash, label)
+  const { receipt, summary } = await withRetries(() => waitFinalized(hash, label), `receipt:${label}`)
   const execution = executionOf(receipt)
   return { hash, summary, execution, error: errorOf(receipt) }
+}
+
+async function withRetries(operation, label, attempts = 8) {
+  let lastError = null
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await operation()
+    } catch (error) {
+      lastError = error
+      const message = error?.shortMessage ?? error?.message ?? String(error)
+      console.log(`[retry:${label}] ${attempt + 1}/${attempts} ${message}`)
+      await new Promise((resolve) => setTimeout(resolve, 3000 * (attempt + 1)))
+    }
+  }
+  throw lastError
 }
 
 async function read(contract, functionName, args = []) {
   // Pin reads to the finalized state. The default 'latest-nonfinal' variant can
   // observe a torn snapshot while a transaction is still being applied.
-  return client.readContract({
+  return withRetries(() => client.readContract({
     address: contract,
     functionName,
     args,
     transactionHashVariant: 'finalized',
-  })
+  }), `read:${functionName}`)
 }
 
 async function confirm(contract, functionName, args, predicate, label) {
@@ -418,6 +433,29 @@ if (stage === 'deploy') {
   const submission = await read(contract, 'get_submission', [BigInt(submissionId)])
   console.log('challenge scenario submission', JSON.stringify(submission))
   writeState({ challengeSubmissionId: submissionId, challengeSubmitTx: submit.hash, challengeEvaluateTx: evaluate.hash })
+} else if (stage === 'bond-withdraw') {
+  const contract = state.contract
+  const challengeId = Number(args[args.indexOf('--id') + 1])
+  const settled = await read(contract, 'get_challenge', [BigInt(challengeId)])
+  console.log('challenge', JSON.stringify(settled))
+  const recipient = settled.bond_recipient.toLowerCase()
+  const recipientAccount = recipient === creator.address.toLowerCase()
+    ? creator
+    : recipient === challenger.address.toLowerCase() ? challenger : null
+  if (!recipientAccount) throw new Error(`unexpected bond recipient ${recipient}`)
+  const before = await balanceOf(recipientAccount.address)
+  const withdraw = await write({
+    account: recipientAccount,
+    contract,
+    functionName: 'withdraw_bond',
+    args: [BigInt(challengeId)],
+    label: 'withdraw_bond',
+  })
+  const after = await balanceOf(recipientAccount.address)
+  console.log('bond recipient', recipientAccount.address, 'balance before', before.toString(), 'after', after.toString(), 'delta', (after - before).toString())
+  const accounting = await read(contract, 'get_escrow_accounting')
+  console.log('escrow accounting', JSON.stringify(accounting))
+  writeState({ withdrawBondTx: withdraw.hash })
 } else if (stage === 'report') {
   const contract = state.contract
   const bounties = await read(contract, 'get_bounties_page', [0, 50])
