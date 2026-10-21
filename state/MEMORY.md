@@ -78,3 +78,56 @@ See state/DESIGN.md.
 
 ## Stage 8 — Final checks and publish
 (next)
+
+## Stage 3 — Build (DONE)
+
+- v2.3 contract written in readable form (81 035 bytes) and deployed to Studionet without
+  minification. Studionet accepts it; Bradbury's pubdata limit was the reason v2.2 was minified.
+- `genvm-lint lint` 3/3 pass. `npm run check:contract` -> lint 3/3, validate ok, 24 methods
+  (11 view / 13 write), exit 0.
+  IMPORTANT: the documented check command does not 404, it is simply slow: it downloads
+  genvm-universal.tar.xz (216 630 904 bytes) from the genlayerlabs/genvm v0.2.16 release at
+  ~85-107 kB/s, i.e. ~40-55 minutes. The newer asset name `genvm-runners-all.tar.xz` returns
+  HTTP 404 for v0.2.16 and the linter tries it first. The bundle was fetched with the linter's
+  own `genvm-lint download --version v0.2.16` command (its supported cache-populating path); no
+  cache was hand-seeded.
+- Direct-mode suite: 84 passed (67 before + 17 new). The 17 new tests fail against the
+  baseline-accepted contract; captured in state/red-state-baseline.txt (14 shown there).
+- Bug found and fixed while redeploying (reported): a challenge whose evidence source changed
+  after filing made `review_challenge` REVERT instead of returning INCONCLUSIVE, because
+  "DIGEST_MISMATCH" was not a declared challenge error class. The challenge could then only be
+  resolved by waiting 48 hours. Fixed by adding the class and a regression test.
+
+## Stage 4 — Self-review (DONE, folded into Stage 3)
+
+Attacked the diff; found and fixed:
+- DIGEST_MISMATCH challenge error class (above).
+- The anchor neutralisation initially replaced an anchor with a token that CONTAINED the anchor
+  ("QUOTED_EVIDENCE_UNTRUSTED_INPUT_JSON"), so the anchor was still present. Replaced with
+  markers that contain no anchor substring.
+- `get_escrow_accounting` and `get_submission_verdict` were added; both are read-only and
+  publish only validator-verified or deterministic values.
+
+## Stage 5 — Frontend (DONE)
+
+- One pure function `availableActions` decides every offered action. Its vocabulary is checked
+  against the constants parsed out of contracts/content_bounty.py, so the interface and the
+  contract cannot drift.
+- Fixed the drift bug found in the audit: the interface offered "Expire permissionlessly" while
+  a challenge was active, and the contract rejects that.
+- 111 frontend tests pass (97 before + 14 new). vue-tsc -b clean.
+
+## Stage 6 — Deploy to Studionet and prove live (IN PROGRESS)
+
+Deployed v2.3: contract 0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da, deployment tx
+0xbb3d4e6681db88931c2d1e19ccafc6daf10ffd48bd691850658cdc98782f18a2, deployed sha256
+0f9e045a462992e226fa69203049b2e9ea108cd9040c097f0c7449bb3cc4c0a5 == sha256 of the repository
+file (BYTE IDENTICAL true).
+
+Live results so far are recorded in docs/MILESTONE-1.md.
+
+OPERATIONAL FINDING: on Studionet a finalized receipt does NOT guarantee that the next
+transaction is executed against the state that includes it. Two transactions executed against a
+stale snapshot ("Challenge does not exist", "Submission does not exist"). The live harness now
+polls the FINALIZED read state until the expected change is visible before sending a dependent
+transaction, and every read is pinned with transactionHashVariant=finalized.

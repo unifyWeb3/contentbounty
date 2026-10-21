@@ -155,7 +155,33 @@ async function write({ account, contract, functionName, args = [], value = 0n, l
 }
 
 async function read(contract, functionName, args = []) {
-  return client.readContract({ address: contract, functionName, args })
+  // Pin reads to the finalized state. The default 'latest-nonfinal' variant can
+  // observe a torn snapshot while a transaction is still being applied.
+  return client.readContract({
+    address: contract,
+    functionName,
+    args,
+    transactionHashVariant: 'finalized',
+  })
+}
+
+async function confirm(contract, functionName, args, predicate, label) {
+  // A finalized receipt does not guarantee that the next transaction will be
+  // executed against the state that includes it. Poll the finalized state
+  // until it shows the expected change before sending a dependent transaction.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    try {
+      const value = await read(contract, functionName, args)
+      if (predicate(value)) {
+        console.log(`[confirm:${label}] state visible after ${attempt + 1} read(s)`)
+        return value
+      }
+    } catch (error) {
+      console.log(`[confirm:${label}] read failed: ${error?.shortMessage ?? error?.message}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+  }
+  throw new Error(`state did not become visible: ${label}`)
 }
 
 async function nextBountyId(contract) {
@@ -392,6 +418,81 @@ if (stage === 'deploy') {
   const submission = await read(contract, 'get_submission', [BigInt(submissionId)])
   console.log('challenge scenario submission', JSON.stringify(submission))
   writeState({ challengeSubmissionId: submissionId, challengeSubmitTx: submit.hash, challengeEvaluateTx: evaluate.hash })
+} else if (stage === 'report') {
+  const contract = state.contract
+  const bounties = await read(contract, 'get_bounties_page', [0, 50])
+  for (const bounty of bounties) console.log('bounty', JSON.stringify(bounty))
+  const accounting = await read(contract, 'get_escrow_accounting')
+  console.log('accounting', JSON.stringify(accounting))
+  for (let id = 0; id < accounting.submission_count; id += 1) {
+    console.log('submission', id, JSON.stringify(await read(contract, 'get_submission', [BigInt(id)])))
+    console.log('verdict', id, JSON.stringify(await read(contract, 'get_submission_verdict', [BigInt(id)])))
+  }
+  for (let id = 1; id <= accounting.challenge_count; id += 1) {
+    console.log('challenge', id, JSON.stringify(await read(contract, 'get_challenge', [BigInt(id)])))
+  }
+} else if (stage === 'review') {
+  const contract = state.contract
+  const challengeId = await nextChallengeId(contract) - 1
+  await confirm(contract, 'get_challenge', [BigInt(challengeId)], (value) => value.status === 'OPEN', 'challenge open')
+  const review = await write({
+    account: challenger,
+    contract,
+    functionName: 'review_challenge',
+    args: [BigInt(challengeId)],
+    label: 'review_challenge',
+  })
+  const record = await read(contract, 'get_challenge', [BigInt(challengeId)])
+  console.log('challenge after review', JSON.stringify(record))
+  if (record.proposed_outcome !== 'UPHOLD' && record.proposed_outcome !== 'DISMISS') {
+    console.log('review did not reach a final proposal')
+    writeState({ reviewTx: review.hash })
+  } else {
+    const finalized = await write({
+      account: challenger,
+      contract,
+      functionName: 'finalize_challenge',
+      args: [BigInt(challengeId)],
+      label: 'finalize_challenge',
+    })
+    const settled = await read(contract, 'get_challenge', [BigInt(challengeId)])
+    console.log('challenge after finalize', JSON.stringify(settled))
+    const recipient = settled.bond_recipient.toLowerCase()
+    const recipientAccount = recipient === creator.address.toLowerCase()
+      ? creator
+      : recipient === challenger.address.toLowerCase() ? challenger : null
+    if (!recipientAccount) {
+      console.log('unexpected bond recipient', recipient)
+    } else {
+      const before = await balanceOf(recipientAccount.address)
+      const withdraw = await write({
+        account: recipientAccount,
+        contract,
+        functionName: 'withdraw_bond',
+        args: [BigInt(challengeId)],
+        label: 'withdraw_bond',
+      })
+      const after = await balanceOf(recipientAccount.address)
+      console.log('bond recipient', recipientAccount.address, 'balance before', before.toString(), 'after', after.toString(), 'delta', (after - before).toString())
+      writeState({ withdrawBondTx: withdraw.hash })
+    }
+    writeState({ reviewTx: review.hash, finalizeTx: finalized.hash })
+  }
+} else if (stage === 'evaluate-id') {
+  const contract = state.contract
+  const id = Number(args[args.indexOf('--id') + 1])
+  const evaluate = await write({
+    account: creator,
+    contract,
+    functionName: 'evaluate_submission',
+    args: [BigInt(id)],
+    label: `evaluate_submission #${id}`,
+  })
+  const submission = await read(contract, 'get_submission', [BigInt(id)])
+  const verdict = await read(contract, 'get_submission_verdict', [BigInt(id)])
+  console.log('submission', JSON.stringify(submission))
+  console.log('verdict', JSON.stringify(verdict))
+  writeState({ evaluateTx: evaluate.hash, verdict })
 } else if (stage === 'challenge') {
   const contract = state.contract
   const submissionId = state.challengeSubmissionId
@@ -494,6 +595,22 @@ if (stage === 'deploy') {
   const submission = await read(contract, 'get_submission', [BigInt(state.injectedSubmissionId)])
   console.log('injected submission', JSON.stringify(submission))
   writeState({ injectedSubmitTx: submit.hash, injectedEvaluateTx: evaluate.hash })
+} else if (stage === 'evaluate-injected') {
+  const contract = state.contract
+  const id = Number(args[args.indexOf('--id') + 1])
+  await confirm(contract, 'get_submission', [BigInt(id)], (value) => value.status === 'PENDING', 'injected submission pending')
+  const evaluate = await write({
+    account: creator,
+    contract,
+    functionName: 'evaluate_submission',
+    args: [BigInt(id)],
+    label: 'evaluate_submission (injected scenario)',
+  })
+  const submission = await read(contract, 'get_submission', [BigInt(id)])
+  const verdict = await read(contract, 'get_submission_verdict', [BigInt(id)])
+  console.log('injected submission', JSON.stringify(submission))
+  console.log('injected verdict', JSON.stringify(verdict))
+  writeState({ injectedEvaluateTx: evaluate.hash })
 } else if (stage === 'refund') {
   const contract = state.contract
   const rubric = JSON.stringify([
