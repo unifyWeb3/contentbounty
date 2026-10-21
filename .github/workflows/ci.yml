@@ -75,8 +75,8 @@ jobs:
 
       - name: Frontend typecheck and production build
         env:
-          VITE_GENLAYER_NETWORK: testnetBradbury
-          VITE_CONTRACT_ADDRESS: '0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04'
+          VITE_GENLAYER_NETWORK: studionet
+          VITE_CONTRACT_ADDRESS: '0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da'
         run: npm run build:frontend
 
       - name: Verify authoritative address and reject historical bundle address

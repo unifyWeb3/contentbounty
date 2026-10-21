@@ -2,16 +2,16 @@
 
 **Escrow for work that can prove itself.**
 
-ContentBounty is a marketplace for creative work on the GenLayer Bradbury
-testnet. A poster defines an ordered rubric and escrows a GEN reward. A creator
-submits public evidence. GenLayer validators evaluate every required criterion,
+ContentBounty is a marketplace for creative work on the GenLayer network. A
+poster defines an ordered rubric and escrows a GEN reward. A creator submits
+public evidence. GenLayer validators evaluate every required criterion,
 while deterministic contract logic controls the verdict and settlement.
 
 This is not an off-chain review dashboard. The contract records the bounty,
 evidence commitment, submission lifecycle, consensus result, challenge state,
 and deterministic settlement. An evaluation can approve a provisional result,
-but only the explicit `claim_reward` path releases a creator reward after the
-challenge window.
+but only the explicit `claim_reward` path records the creator reward after
+the dispute window, and only the explicit `withdraw_reward` path releases it.
 
 [![Historical live app](https://img.shields.io/badge/historical-v2.1.1-6b7280)](https://contentbounty.vercel.app)
 [![CI](https://github.com/unifyWeb3/contentbounty/actions/workflows/ci.yml/badge.svg)](https://github.com/unifyWeb3/contentbounty/actions/workflows/ci.yml)
@@ -20,44 +20,80 @@ challenge window.
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776ab)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Live deployment (current v2.2)
+## What changed in v2.3 (this milestone)
 
-Source commit `2e35764` (SHA `b5e89cf03ae7f79d1c6d0b0c45ee3b8e567fe4fb7f57fea0b370e165a33df36a`) is deployed and finalized on **GenLayer Bradbury (chain 4221)** at:
+Baseline for the comparison: tag `baseline-accepted` (the accepted v2.2
+deployment, Bradbury `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`).
+Full evidence: [`docs/MILESTONE-1.md`](docs/MILESTONE-1.md).
 
-**`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`** — [Explorer](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) — deployment [tx `0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) `FINALIZED/AGREE/FINISHED_WITH_RETURN`. The public app at https://contentbounty.vercel.app now serves this address (verified bundle `docs/proofs/bradbury-v22-deployment-proof.json`).
+| Change | What it means |
+|---|---|
+| **Closed-set verdicts** | The contract no longer stores any model prose. `Submission.feedback` and `Challenge.proposed_feedback` are gone; every persisted verdict field is either recomputed by every validator or derived by deterministic contract code. A new `verdict_code` is a closed set, and `get_submission_verdict` publishes the per-criterion result and the rubric digest. |
+| **Pull-based settlement** | No state transition moves value any more. `claim_reward`, `cancel_bounty`, `expire_bounty`, `finalize_challenge` and `timeout_challenge` only *record* a liability. Three new methods — `withdraw_reward`, `withdraw_refund`, `withdraw_bond` — perform the transfers, each exactly once and each authorised against the recorded recipient. |
+| **Published escrow accounting** | `get_escrow_accounting()` publishes every liability class the contract holds. Its sum is the native balance the contract must hold and can be compared with the observed balance. |
+| **Poster-declared dispute window** | The 48-hour challenge window was a hard-coded constant that was invisible in the bounty's own record. It is now a poster-declared parameter (300 s … 172 800 s), stored on the bounty, copied into `challenge_deadline` at approval, and shown to the creator before they submit. |
+| **Fixed: overturned approvals** | An upheld challenge used to leave a *rejected* submission claiming `criteria_bits = 11` and a perfect score. The overturned approval is now cleared and the verdict is `CHALLENGE_UPHELD`. |
+| **Fixed: unresolvable challenges** | A challenge whose evidence source changed after filing made `review_challenge` revert instead of returning `INCONCLUSIVE`, so the challenge could only be resolved 48 hours later. `DIGEST_MISMATCH` is now a declared error class. |
+| **Prompt-anchor neutralisation** | Untrusted evidence can no longer contain the contract's own prompt anchors. The SHA-256 commitment still covers the exact published bytes. |
+| **One status → action rule in the interface** | The interface no longer re-implements contract rules. One pure function decides which actions are offered, and its vocabulary is checked against the status constants parsed out of the contract source. This fixed a case where the interface offered an action the contract rejects. |
 
-* Provenance: wallet/bounty/contract/chain-bound claim tag `cb-` + 20 hex (Keccak256) checked by consensus before state is allocated; not legal authorship.
-* Settlement: `evaluate_submission` → `APPROVED_PENDING` (48h challenge window, reward stays escrowed, bounty `LOCKED`) → `claim_reward` only after deadline with no active challenge → `APPROVED` + `FILLED`.
-* Challenge: fixed reason codes, exact bond `max(5% reward, 0.0001 GEN)`, `OPEN → review → UPHELD/DISMISSED/TIMED_OUT`, `active_challenge_id` blocks payout, `timeout_challenge` after 3 inconclusive or 48h.
+## Live deployment (current v2.3)
+
+Source commit `6565064`, SHA-256
+`0f9e045a462992e226fa69203049b2e9ea108cd9040c097f0c7449bb3cc4c0a5`
+(81 035 bytes, readable source). The deployed bytes were read back with
+`gen_getContractCode` and are **byte-identical** to `contracts/content_bounty.py`.
+
+**`0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da`** on **GenLayer Studionet
+(chain 61999)** — deployment
+[`0xbb3d4e6681db88931c2d1e19ccafc6daf10ffd48bd691850658cdc98782f18a2`].
+
+Read this honestly before you use it:
+
+* **Studionet state is temporary.** The official GenLayer network reference
+  lists Studionet as a hosted development environment whose state resets are
+  expected. This deployment is proof of work, not a permanent home.
+* **GEN on Studionet is faucet-simulated and is worth nothing.**
+  `sim_fundAccount` mints the balances. The live proof shows that value moves
+  through the escrow and back out through the withdrawal path; it does not
+  show money.
+* **The accepted v2.2 deployment is still live on Bradbury** at
+  `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (chain 4221, persistent), and
+  it is unchanged. A persistent v2.3 deployment on Bradbury needs one faucet
+  claim in a browser, which is a human step.
 
 | Surface | Link |
 |---|---|
-| **Current v2.2 product** | https://contentbounty.vercel.app |
-| Current v2.2 contract | [`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) |
-| Deployment transaction | [`0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) |
+| Current v2.3 contract | [`0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da`](https://explorer-studio.genlayer.com/address/0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da) |
+| v2.3 deployment transaction | [`0xbb3d4e66...f18a2`](https://explorer-studio.genlayer.com/tx/0xbb3d4e6681db88931c2d1e19ccafc6daf10ffd48bd691850658cdc98782f18a2) |
+| Milestone-1 evidence | [docs/MILESTONE-1.md](docs/MILESTONE-1.md) |
+| Accepted v2.2 contract (Bradbury, persistent) | [`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) |
+| v2.2 deployment transaction | [`0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) |
 | v2.2 deployment proof | [Bradbury v2.2 proof](docs/proofs/bradbury-v22-deployment-proof.json) |
 | Source | https://github.com/unifyWeb3/contentbounty |
+| Historical v2.1.1 contract (archived) | [`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
+| Historical proof | [Bradbury proof v1](docs/proofs/bradbury-persistent-proof-v1.json) |
 | X walkthrough | [Watch on X](https://x.com/i/status/2087119821921993214) |
 | YouTube demo | [Watch on YouTube](https://youtu.be/wv_5xmYamDU) |
-| Historical v2.1.1 contract (archived) | [`0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) |
-| Historical deployment tx | [`0x683451...4d93`](https://explorer-bradbury.genlayer.com/tx/0x6834512f8a6ad9bab36c9954477d9911617c6a097f6eaff33315bfddc8384d93) |
-| Historical proof | [Bradbury proof v1](docs/proofs/bradbury-persistent-proof-v1.json) |
 
 ## How it works
 
-| Operation | What happens on GenLayer Bradbury |
+| Operation | What happens on GenLayer |
 |---|---|
-| `post_bounty(...)` | The poster funds a reward, defines deadlines, and commits an ordered rubric. |
+| `post_bounty(...)` | The poster funds a reward, defines deadlines and the dispute window, and commits an ordered rubric with its digest. |
 | `submit_content(bounty_id, uri)` | Consensus renders an allowlisted HTTPS source, normalizes it, checks the creator's claim tag, and stores its SHA-256 commitment. |
-| `evaluate_submission(submission_id)` | A leader evaluates the rubric and validators independently repeat the evidence pipeline. Approval becomes `APPROVED_PENDING`; no creator reward moves. |
-| `challenge_submission(...)` | A non-creator challenger posts fixed-reason evidence with the exact challenge bond during the challenge window. The bounty poster may challenge. |
+| `evaluate_submission(submission_id)` | A leader evaluates the rubric and validators independently repeat the evidence pipeline. Approval becomes `APPROVED_PENDING`; no reward moves. |
+| `challenge_submission(...)` | A non-creator challenger posts fixed-reason evidence with the exact challenge bond during the dispute window. The bounty poster may challenge. |
 | `review_challenge(challenge_id)` | A second consensus round proposes `UPHOLD`, `DISMISS`, or `INCONCLUSIVE`; it never moves funds. |
-| `finalize_challenge(...)` / `timeout_challenge(...)` | Deterministic logic settles a reviewed or timed-out challenge and routes its bond exactly once. |
-| `claim_reward(submission_id)` | After the deadline and with no active challenge, the creator alone atomically finalizes the winner and receives the reward. |
+| `finalize_challenge(...)` / `timeout_challenge(...)` | Deterministic logic settles a reviewed or timed-out challenge and records who may withdraw the bond. |
+| `claim_reward(submission_id)` | After the dispute window and with no active challenge, the creator alone records the reward as withdrawable and the bounty becomes `FILLED`. **No value moves.** |
+| `withdraw_reward(submission_id)` | The creator pulls the recorded reward. Exactly once, creator only. |
+| `withdraw_refund(bounty_id)` | The poster pulls a recorded refund from a cancelled or expired bounty. Exactly once, poster only. |
+| `withdraw_bond(challenge_id)` | The recorded bond recipient pulls the bond. Exactly once, recipient only. |
 | Rejected result | The submission is terminal and remains unpaid. |
 | Inconclusive result | Fetch, parser, or digest uncertainty can be retried without misclassifying the creator. |
-| `cancel_bounty(...)` | The poster can reclaim an untouched open bounty. |
-| `expire_bounty(...)` | Anyone can trigger the refund after the evaluation deadline if no provisional winner or active challenge exists. |
+| `cancel_bounty(...)` | The poster can record a refund for an untouched open bounty. The refund is pulled separately. |
+| `expire_bounty(...)` | Anyone can record a refund after the evaluation deadline if no provisional winner or active challenge exists. |
 
 Core equivalence rule:
 
@@ -65,36 +101,47 @@ Core equivalence rule:
 evidence SHA-256 + decision + criteria bits + score bucket + reason code + claim-tag state
 ```
 
-Feedback is stored for users, but feedback wording never controls settlement.
-The model does not choose the payment amount or recipient.
+Feedback wording is not part of equivalence because no model wording is stored
+at all. The verdict is a closed set derived by deterministic contract code.
+The model never chooses the payment amount or recipient.
 
 ## GenLayer integrations
 
 | Integration | Where it is used |
 |---|---|
-| Intelligent Contract on Bradbury | Escrow, bounty state, submissions, consensus results, transfers, and refunds. |
+| Intelligent Contract on Studionet and Bradbury | Escrow, bounty state, submissions, consensus results, transfers, and refunds. |
 | `gl.nondet.web.render` | Retrieves bounded public evidence during submission and evaluation. |
 | `gl.nondet.exec_prompt` | Extracts observations and judges every ordered rubric criterion. |
-| `gl.vm.run_nondet_unsafe` | Runs the leader result against an independent validator policy. |
-| `emit_transfer` | Releases a creator reward only from `claim_reward`, or returns an eligible refund/bond from deterministic paths. |
+| `gl.vm.run_nondet_unsafe` | Runs the leader result against an independent validator policy that re-renders the evidence and re-runs the judgment. |
+| `emit_transfer` | Moves value only from `withdraw_reward`, `withdraw_refund` and `withdraw_bond`. No state transition emits a transfer. |
 | `Keccak256` | Derives the domain-separated pre-submission claim tag; no ECDSA recovery primitive is assumed. |
 | `gl.message_raw["datetime"]` | Supplies the authoritative transaction timestamp used for all deadlines. |
-| Bradbury explorer | Provides public contract and transaction lifecycle evidence. |
+| GenLayer explorer | Provides public contract and transaction lifecycle evidence. |
 | `genlayer-js` | Connects the Vue frontend to reads and externally signed wallet writes. |
 
-## Verified Bradbury proofs
+## Verified deployments
 
-**Current v2.2** (delayed settlement, `APPROVED_PENDING` + 48h challenge window):
+**Current v2.3** (Studionet, closed-set verdicts, pull-based settlement):
+
+| Surface | Details |
+|---|---|
+| Contract | [`0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da`](https://explorer-studio.genlayer.com/address/0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da) Studionet 61999 |
+| Deployment tx | [`0xbb3d4e66...f18a2`](https://explorer-studio.genlayer.com/tx/0xbb3d4e6681db88931c2d1e19ccafc6daf10ffd48bd691850658cdc98782f18a2) `FINALIZED/MAJORITY_AGREE` |
+| Source | commit `6565064`, sha256 `0f9e045a...cc4c0a5` (81 035 bytes, readable, `py-genlayer:1jb45...`) |
+| Byte identity | `gen_getContractCode` read back and compared with the repository file: **identical** |
+| Methods | 24 (11 view / 13 write), `genvm-lint check` |
+| Tests | 84 direct-mode (67 before, 17 new) and 111 frontend (97 before, 14 new) |
+| Milestone evidence | [docs/MILESTONE-1.md](docs/MILESTONE-1.md) |
+
+**Accepted v2.2** (Bradbury, delayed settlement, `APPROVED_PENDING` + 48 h window).
+This is the earlier accepted version and it is unchanged:
 
 | Surface | Details |
 |---|---|
 | Contract | [`0x7F73e10059D0C669c2d2fe3FA716312587aC87c8`](https://explorer-bradbury.genlayer.com/address/0x7F73e10059D0C669c2d2fe3FA716312587aC87c8) Bradbury 4221 |
-| Deployment tx | [`0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) `FINALIZED/AGREE` |
-| Source | commit `2e35764`, SHA `b5e89cf03ae7f79d...` (minified 52237 bytes, `py-genlayer:1jb45...`) |
+| Deployment tx | [`0x7b5ef343...8532`](https://explorer-bradbury.genlayer.com/tx/0x7b5ef343bffa78cc0f735ce0c7e41488b288a9bbe4c72d417a36f70349f18532) `FINALIZED/AGREE` |
+| Source | commit `2e35764`, sha256 `b5e89cf0...33df36a` (minified 52 237 bytes) |
 | Deployment proof | [Bradbury v2.2 proof](docs/proofs/bradbury-v22-deployment-proof.json) |
-| Frontend bundle | verified `index-eiZkinTR.js` contains `0x7F73...`, historical `0x0d997...` absent |
-
-The v2.2 deployment proof verifies lint 3/3, 19 methods (9 view/10 write), direct 67 pass, frontend 97 pass, source hash match, and that `evaluate_submission` never moves reward (only `claim_reward` does). Live challenge-window demo is completed via a fresh bounty created against this address (see proof notes and live transaction evidence below).
 
 **Historical v2.1.1** (immediate settlement, no challenge window):
 
@@ -104,15 +151,25 @@ The v2.2 deployment proof verifies lint 3/3, 19 methods (9 view/10 write), direc
 | Bounty `#4`, submission `#2` | `INCONCLUSIVE`, `DIGEST_MISMATCH` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0x0708c8cb1c4f287292844b8e4f10ae27f4f45963176692d9031d8dbd3ef0b1aa) |
 | Bounty `#5`, submission `#3` | `APPROVED` (immediate), `ALL_REQUIRED_CRITERIA_MET` | [Evaluation transaction](https://explorer-bradbury.genlayer.com/tx/0x5eca4c1ab3d15e7586aca3b32aabf035beba9917c310ad78da442b239ac1c227) |
 
-Historical links are archived at [`0x0d997...`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) and do not demonstrate the v2.2 delayed-claim machine.
+Historical links are archived at [`0x0d997...`](https://explorer-bradbury.genlayer.com/address/0x0d997CF8E3E8b4b7166ED2e0713F7F6927Ba4c04) and do not demonstrate the delayed-claim machine.
 
 ## Verification path
 
-1. Open https://contentbounty.vercel.app — confirm it loads `index-eiZkinTR.js` containing `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` and not `0x0d997...` (`curl -s https://contentbounty.vercel.app/assets/index-eiZkinTR.js | grep 0x7F73`).
-2. Open the **current v2.2 contract** `0x7F73...` on the explorer; verify `get_allowed_sources` and `get_claim_tag`.
-3. For historical comparison, open the archived `0x0d997...` and its three transactions above.
-4. Verify v2.2 deployment proof `docs/proofs/bradbury-v22-deployment-proof.json` matches the live address, source SHA, and finalized deployment.
-5. Run `npm run verify:live-proof:online` for a read-only lifecycle check (historical), and inspect the live v2.2 bounty created for the current demo (see Phase 4-9 evidence).
+1. Open https://contentbounty.vercel.app — confirm it loads a bundle containing
+   `0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da` and not the historical addresses.
+2. Open the **current v2.3 contract** on the Studionet explorer; check
+   `get_allowed_sources`, `get_claim_tag` and `get_escrow_accounting`.
+3. Open the **accepted v2.2 contract** `0x7F73...` on the Bradbury explorer.
+4. Read the deployed v2.3 source back and compare it with the repository file:
+
+```bash
+curl -s -X POST https://studio.genlayer.com/api -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"gen_getContractCode","params":["0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da"]}'
+sha256sum contracts/content_bounty.py
+```
+
+5. Read [docs/MILESTONE-1.md](docs/MILESTONE-1.md) for the claim -> commit ->
+   test -> live transaction table, and `state/AUDIT.md` for the baseline audit.
 
 ## Product screens
 
@@ -134,10 +191,11 @@ flowchart LR
     E -->|rendered text + SHA-256| C
     C -->|leader evaluation| V[GenLayer leader + validators]
     V -->|digest + decision + bits + bucket + reason| C
-   C -->|claim reward, bond route, or eligible refund| T[Finalized transfer]
+    C -->|record reward, refund, or bond liability| L[Contract liability]
+    L -->|explicit withdrawal by the recorded recipient| T[Finalized transfer]
     F[Vue frontend<br/>injected wallet] -->|reads + signed writes| C
     C -->|state + lifecycle receipts| F
-    C --> X[Bradbury explorer<br/>persistent proof]
+    C --> X[GenLayer explorer<br/>deployment evidence]
 ```
 
 No custodial backend, private judge, or frontend-held signing key controls the
@@ -149,17 +207,24 @@ outcome. The Intelligent Contract is the source of truth.
 |---|---|
 | `OPEN` | Funded with no provisional or final winner. It may be untouched, or reopened after an upheld challenge; submission and cancellation eligibility still follow the stored deadlines and counts. |
 | `LOCKED` | At least one submission remains evaluable, or a provisional winner is awaiting settlement. Poster cancellation is disabled. |
-| `FILLED` | A consensus-approved submission won and the reward was emitted. |
-| `CANCELLED` | An untouched bounty was refunded to its poster. |
-| `EXPIRED` | The deadline passed without a winner and the poster was refunded. |
+| `FILLED` | A consensus-approved submission won. The reward is recorded as withdrawable and the creator pulls it. |
+| `CANCELLED` | An untouched bounty was cancelled. A refund is recorded and the poster pulls it. |
+| `EXPIRED` | The deadline passed without a winner. A refund is recorded and the poster pulls it. |
 
 Submissions move through `PENDING`, `APPROVED_PENDING`, `APPROVED`, `REJECTED`,
 `INCONCLUSIVE`, and `SUPERSEDED`. `APPROVED_PENDING` means the consensus
-evaluation passed, but the reward is still escrowed during the challenge window.
-Only `claim_reward` changes it to final `APPROVED`. Challenges use exactly
+evaluation passed, but the reward is still escrowed during the dispute window.
+Only `claim_reward` changes it to final `APPROVED`, and `claim_reward` only
+records the reward; `withdraw_reward` moves it. Challenges use exactly
 `OPEN`, `UPHELD`, `DISMISSED`, and `TIMED_OUT`; `active_challenge_id=0` means
-there is no active challenge. Inconclusive evaluations and challenge reviews
-can retry only within their bounded attempt/deadline rules.
+there is no active challenge, and the bond is recorded for withdrawal when the
+challenge settles. Inconclusive evaluations and challenge reviews can retry
+only within their bounded attempt/deadline rules.
+
+The dispute window is a poster-declared parameter, stored on the bounty when it
+is posted and copied into `challenge_deadline` at approval. The contract
+accepts 300 to 172 800 seconds. The creator sees the exact window on the
+bounty before submitting.
 
 ## Repository layout
 
@@ -171,8 +236,11 @@ scripts/                    Deployment, proof, recovery, and safety tools
 tests/direct/               GenLayer Direct Mode contract tests
 tests/js/                   Lifecycle, proof, network, and recovery tests
 tests/unit/                 Evidence preparation tests
+docs/MILESTONE-1.md         Milestone-1 claim -> commit -> test -> live table
 docs/assets/                Product screenshots
-docs/proofs/                Sanitized persistent Bradbury proof
+docs/proofs/                Sanitized proofs and published evidence sources
+state/                      Baseline audit, milestone plan, design, decision log
+submission/                 The Changes & Improvements text
 ```
 
 ## Run locally
@@ -188,14 +256,14 @@ cp frontend/.env.example frontend/.env
 npm --prefix frontend run dev
 ```
 
-Production build against the current v2.2 deployment:
+Production build against the current v2.3 deployment:
 
 ```bash
-VITE_GENLAYER_NETWORK=testnetBradbury VITE_CONTRACT_ADDRESS=0x7F73e10059D0C669c2d2fe3FA716312587aC87c8 npm run build:frontend
+VITE_GENLAYER_NETWORK=studionet VITE_CONTRACT_ADDRESS=0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da npm run build:frontend
 npm run verify:frontend-bundle
 ```
 
-The production build fails closed if required network or address configuration is missing or malformed. The tracked address is the live v2.2 deployment; the historical `0x0d997...` is archived.
+The production build fails closed if required network or address configuration is missing or malformed. The tracked address is the live v2.3 Studionet deployment; the accepted v2.2 Bradbury deployment is `0x7F73...` and the historical `0x0d997...` is archived. To build against the persistent Bradbury deployment instead, use `VITE_GENLAYER_NETWORK=testnetBradbury` and the v2.2 address.
 
 ## Prepare evidence
 
@@ -250,8 +318,9 @@ until a reliable, deterministic renderer path is established.
 
 ### Challenges and delayed settlement
 
-An approval enters `APPROVED_PENDING` and records a 48-hour challenge deadline;
-the bounty remains `LOCKED`, no competitor is superseded, and no creator reward
+An approval enters `APPROVED_PENDING` and records the dispute deadline, which
+is the poster-declared window stored on the bounty (300 to 172 800 seconds).
+The bounty remains `LOCKED`, no competitor is superseded, and no creator reward
 is transferred. A challenge uses one fixed reason code:
 
 `NO_SOURCE_CONTROL`, `AUTHORSHIP_DISPUTE`, `RIGHTS_OR_PLAGIARISM`,
@@ -267,18 +336,20 @@ max(reward * 500 / 10000, 0.0001 GEN)
 The submission creator cannot challenge their own submission; the bounty poster
 may challenge because the poster is an economically interested party who still
 needs a permissionless way to dispute an incorrect approval. An upheld or timed-
-out challenge returns the bond to the challenger and rejects only an upheld
-submission. A dismissed challenge pays the bond to the submission creator as
-compensation for a frivolous challenge, while leaving the approved result
-claimable after the original deadline. Every bond is marked and released exactly
-once.
+out challenge records the bond as withdrawable by the challenger and rejects
+only an upheld submission. A dismissed challenge records the bond as
+withdrawable by the submission creator as compensation for a frivolous
+challenge, while leaving the approved result claimable after the original
+deadline. Every bond is recorded for withdrawal exactly once, and only the
+recorded recipient can withdraw it.
 
 `review_challenge` is a nondeterministic proposal round. It independently
 renders and commits both sources, checks the stored digest and claim tag, and
 only then uses bounded prompts with source text framed as untrusted data.
 `finalize_challenge` is a separate deterministic settlement round; review output
 cannot itself move funds. Leader/validator disagreement reverts without a
-proposal or bond movement. Feedback wording is excluded from equivalence.
+proposal or bond movement. No model wording is stored at all, so nothing
+outside the equivalence set is persisted.
 
 Challenge review can time out either after three agreed inconclusive attempts or
 after 48 hours from challenge creation. The elapsed-time path is mandatory so a
@@ -287,10 +358,12 @@ open to the already consensus-approved result: the challenge bond returns to the
 challenger, the active challenge clears, and the creator may claim once the
 original challenge deadline has elapsed.
 
-`claim_reward` is the sole creator-reward path. It checks the creator caller,
-deadline, active challenge, provisional winner, bounty lock, and one-time claim,
-updates all settlement fields before emitting the finalized transfer, marks the
-bounty `FILLED`, and supersedes remaining pending competitors.
+`claim_reward` is the only path that can make a creator reward due. It checks
+the creator caller, deadline, active challenge, provisional winner, bounty lock,
+and one-time claim, updates all settlement fields, marks the bounty `FILLED`,
+and supersedes remaining pending competitors. It does not emit a transfer.
+`withdraw_reward` is the only path that moves the reward, and it only pays the
+creator who owns the submission, once.
 
 ### Deferred identity work
 
@@ -328,30 +401,48 @@ npm run verify:live-proof:online
 
 - The frontend uses an injected wallet and never requests or stores a private
   key.
-- Before every write, the frontend verifies Bradbury execution state and the
-  configured consensus contract identity.
+- Before every write, the frontend verifies the GenLayer execution state and
+  the configured consensus contract identity.
 - An accepted transaction is never presented as finalized.
-- Payout confirmation requires a finalized `claim_reward` execution and a
-  recipient balance delta; an evaluation approval alone is never payment.
+- Payout confirmation requires a finalized withdrawal execution and a
+  recipient balance delta; an evaluation approval alone is never payment, and
+  a recorded liability is never presented as a transfer.
+- No model wording is stored on chain, so the interface never presents
+  unverified text as a consensus result. It presents the closed-set verdict and
+  the per-criterion bits that the validators agreed on.
 - A missing claim tag is a deterministic rejection with no LLM call; changed or
   otherwise unverifiable evidence remains an `INCONCLUSIVE` path where the
   contract cannot make a deterministic claim-tag decision.
 - The challenge mechanism disputes plagiarism, rights, false claims, source
   control, or evaluation error; it does not turn an LLM judgment into legal
   adjudication.
-- Bradbury is a public testnet. Tests and persistent proof do not replace a
-  formal security audit.
+- Bradbury and Studionet are public testnets. Tests and live proof do not
+  replace a formal security audit.
 - Bradbury shares chain ID `4221` with another GenLayer network. Wallets that
   cannot switch automatically must use the Bradbury RPC configuration.
+- The v2.3 milestone deployment is on Studionet, whose state is temporary and
+  whose GEN is faucet-simulated. It proves the escrow mechanics, not money.
+- A persistent Bradbury deployment of v2.3 needs one faucet claim in a browser;
+  the official faucet is protected by a captcha and cannot be automated.
+- On Studionet, a reverted payable call credits the contract without a
+  matching debit. The contract's own liability accounting is exact, but the
+  raw native balance can exceed it by the value of reverted calls. This was
+  measured to the wei and is recorded in `docs/MILESTONE-1.md` §4.
 
 ## Deployment status
 
-**Current v2.2** is deployed and finalized at `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (Bradbury 4221, tx `0x7b5ef343...8532`, source `2e35764`/`b5e89cf...`). The public frontend at https://contentbounty.vercel.app serves this address; the bundle verifier confirms `0x7F73...` present and `0x0d997...`/`0xFf546...` absent. The checked-in v2.1.1 proof remains valid historical evidence but is not v2.2 evidence.
+**Current v2.3** is deployed and finalized at `0x12F6A5654fd0496951cd11976D2ebFa2cB4417Da` (Studionet 61999, deployment tx `0xbb3d4e66...f18a2`, source `6565064`/`0f9e045a...`). The deployed bytes were read back with `gen_getContractCode` and are byte-identical to `contracts/content_bounty.py`. The public frontend at https://contentbounty.vercel.app serves this address; the bundle verifier confirms the address is present and the historical ones are absent.
 
-Live challenge-window demonstration uses a fresh bounty on the current address. Direct tests prove `evaluate_submission` moves no reward; only `claim_reward` after 48h with no active challenge does. See deployment proof and live transaction evidence.
+**Accepted v2.2** is still deployed and finalized at `0x7F73e10059D0C669c2d2fe3FA716312587aC87c8` (Bradbury 4221, tx `0x7b5ef343...8532`, source `2e35764`/`b5e89cf...`). It is unchanged. The checked-in v2.1.1 proof remains valid historical evidence but is not evidence for v2.2 or v2.3.
+
+The full live proof for v2.3, with every transaction hash and the observed
+balances, is in [`docs/MILESTONE-1.md`](docs/MILESTONE-1.md).
 
 ## Documentation
 
+- [Milestone-1 evidence: claim -> commit -> test -> live transaction](docs/MILESTONE-1.md)
+- [Milestone-1 Changes & Improvements text](submission/milestone-text.md)
+- [Baseline audit, milestone plan and design](state/AUDIT.md)
 - [ContentBounty v2 specification](docs/CONTENT_BOUNTY_V2_SPEC.md)
 - [Live consensus testing and recovery](docs/LIVE_CONSENSUS_TESTING.md)
 - [Persistent Bradbury proof](docs/proofs/bradbury-persistent-proof-v1.json)
@@ -360,7 +451,8 @@ Live challenge-window demonstration uses a fresh bounty on the current address. 
 - [Historical implementation log through v2.1.1](IMPLEMENTATION_LOG.md)
 
 `AUDIT_REPORT.md` covers the historical pre-v2 commit and is not a report on the
-current verified deployment.
+current verified deployment. The baseline audit of the accepted v2.2 deployment
+is in `state/AUDIT.md`.
 
 ## License
 

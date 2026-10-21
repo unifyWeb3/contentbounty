@@ -61,6 +61,36 @@ export function formatCountdown(deadline: number, now: number): string {
 export function contractErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   const normalized = raw.toLowerCase()
+  if (normalized.includes('no reward is withdrawable')) {
+    return 'There is no reward waiting to be withdrawn for this submission.'
+  }
+  if (normalized.includes('no refund is withdrawable')) {
+    return 'There is no refund waiting to be withdrawn for this bounty.'
+  }
+  if (normalized.includes('no bond is withdrawable')) {
+    return 'There is no bond waiting to be withdrawn for this challenge.'
+  }
+  if (normalized.includes('only the creator can withdraw')) {
+    return 'Only the submission creator can withdraw this reward.'
+  }
+  if (normalized.includes('only the poster can withdraw the refund')) {
+    return 'Only the bounty poster can withdraw this refund.'
+  }
+  if (normalized.includes('only the bond recipient can withdraw')) {
+    return 'Only the recorded bond recipient can withdraw this bond.'
+  }
+  if (normalized.includes('reward already claimed')) {
+    return 'This reward was already claimed.'
+  }
+  if (normalized.includes('bounty refund already recorded')) {
+    return 'A refund was already recorded for this bounty.'
+  }
+  if (normalized.includes('invalid challenge window')) {
+    return 'The dispute window must be between 5 minutes and 48 hours.'
+  }
+  if (normalized.includes('bounty has an active challenge')) {
+    return 'An active challenge currently blocks this action.'
+  }
   if (normalized.includes('claim_tag_missing')) {
     return 'The rendered source does not contain the exact wallet claim tag. Add it before submitting.'
   }

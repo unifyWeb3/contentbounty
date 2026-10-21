@@ -1,0 +1,34 @@
+ContentBounty v2.3 milestone proof — compliant submission evidence
+
+This document is the published evidence source for the ContentBounty v2.3
+milestone deployment on GenLayer Studionet. It is served over canonical HTTPS
+from raw.githubusercontent.com and is rendered by the GenVM web renderer during
+the submission and the evaluation consensus rounds.
+
+Subject: GenLayer intelligent contract escrow for verifiable creative work.
+
+This source names GenLayer explicitly. GenLayer is the intelligent contract
+network on which this bounty, its ordered rubric, the SHA-256 evidence
+commitment and the pull-based settlement are executed. The official GenLayer
+documentation is published at https://docs.genlayer.com/ and the official
+network reference, including the GenLayer RPC endpoints and the chain id of
+every GenLayer network, is published at https://docs.genlayer.com/developers/networks .
+
+Rubric criterion c1 asks whether the evidence names GenLayer. This paragraph
+names GenLayer explicitly and describes the GenLayer intelligent contract
+network, so the requirement is affirmatively evidenced by the text.
+
+Rubric criterion c2 asks whether the evidence includes an official GenLayer
+documentation URL. The paragraph above includes the canonical official
+GenLayer documentation URL https://docs.genlayer.com/ , so the requirement is
+affirmatively evidenced by the text.
+
+The GenLayer evidence commitment for this document is the SHA-256 of its
+normalized text. GenLayer validators recompute that digest independently from
+the rendered page, and the deterministic contract code derives the verdict
+from the per-criterion bits that the GenLayer validators agree on. No model
+prose is written to the chain.
+
+Wallet claim tag for this submission:
+
+cb-f9446285a70487b76ec3
