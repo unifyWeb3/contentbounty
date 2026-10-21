@@ -9,3 +9,7 @@ dist/
 video/
 .vercel
 .env*.local
+
+# Milestone-1 throwaway testnet key material (never commit)
+.secrets/
+*.key

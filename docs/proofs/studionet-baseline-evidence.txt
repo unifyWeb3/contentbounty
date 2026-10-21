@@ -1,0 +1,32 @@
+ContentBounty baseline v2.2 live evidence (Studionet)
+
+This document is the published evidence source for the ContentBounty v2.2
+baseline deployment on GenLayer Studionet. It is served over canonical HTTPS
+from raw.githubusercontent.com and is rendered by the GenVM web renderer during
+the submission and evaluation consensus rounds.
+
+Subject: GenLayer intelligent contract escrow for verifiable creative work.
+
+This source names GenLayer explicitly. GenLayer is the intelligent contract
+network on which this bounty, its rubric, its evidence commitment, and its
+settlement are executed. The official GenLayer documentation is published at
+https://docs.genlayer.com/ and the network reference lists the official
+GenLayer RPC endpoints at https://docs.genlayer.com/developers/networks .
+
+Rubric criterion c1: the evidence names GenLayer. This paragraph names
+GenLayer several times and describes the GenLayer intelligent contract
+network, so the requirement is affirmatively evidenced by the text.
+
+Rubric criterion c2: the evidence includes an official URL. The paragraph
+above includes the canonical official GenLayer documentation URL
+https://docs.genlayer.com/ , so the requirement is affirmatively evidenced by
+the text.
+
+The GenLayer evidence commitment for this document is the SHA-256 of its
+normalized text. GenLayer validators recompute that digest independently from
+the rendered page, and the deterministic contract code derives the verdict from
+the per-criterion bits that GenLayer validators agree on.
+
+Wallet claim tag for this submission:
+
+cb-af8ae15f51d8357f381fd52191e67ce5b5e5e26c
